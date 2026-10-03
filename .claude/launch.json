@@ -12,6 +12,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "5174"],
       "port": 5174
+    },
+    {
+      "name": "yandex",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["-y", "@yandex-games/sdk-dev-proxy", "-p", ".", "--dev-mode=true", "--port", "8080"],
+      "port": 8080
     }
   ]
 }

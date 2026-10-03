@@ -23,6 +23,8 @@
   ];
   const ACTIVE_STEP = 5, ACTIVE_UNTIL = 40;
   const START_HINTS = 3;
+  // Реклама между партиями — при первом запуске партии за визит и дальше после каждых AD_EVERY доигранных.
+  const AD_EVERY = 5;
   // Подсказка «диапазон» оставляет ответы, отличающиеся не больше чем в RANGE_HINT раз.
   const RANGE_HINT = 4;
   const TUTORIAL = ['человек', 'кот'];
@@ -35,7 +37,7 @@
     result: $('result'), verdict: $('verdict'), fact: $('fact'),
     controls: $('controls'), count: $('count'), slider: $('slider'),
     minus: $('minus'), plus: $('plus'), main: $('main'),
-    hints: $('hints'), hintCount: $('hint-count'), hintAd: $('hint-ad'),
+    hints: $('hints'), hintCount: $('hint-count'), hintAd: $('hint-ad'), swap: $('swap'),
     hintBtns: [...document.querySelectorAll('#hints button[data-hint]')],
     exit: $('exit'), leave: $('leave'), leaveStay: $('leave-stay'), leaveGo: $('leave-go'),
     levelNote: $('level-note'), playDaily: $('play-daily'), playFree: $('play-free'),
@@ -60,8 +62,11 @@
   // inside — в истории браузера лежит запись партии или коллекции, «назад» возвращает в меню.
   let inside = false, leaving = false;
   let gained = { items: [], hint: false, level: null };
-  // После доигранной партии перед следующей показывается реклама, если площадка её даёт.
-  let adDue = false;
+  // adDue — перед следующей партией показать рекламу, played — партий доиграно за визит.
+  let adDue = false, played = 0;
+  // Партия дня: spare — запасной раунд, swapAt — номер раунда, переигранного за видео,
+  // finished — итог партии уже записан.
+  let spare = null, swapAt = null, finished = false;
 
   // ---------- утилиты ----------
 
@@ -211,9 +216,9 @@
 
   // ---------- партия ----------
 
-  function makeRounds(rng, avoid, pool) {
+  function makeRounds(rng, avoid, pool, n = ROUNDS) {
     const out = [], used = new Set();
-    for (let guard = 0; out.length < ROUNDS && guard < 4000; guard++) {
+    for (let guard = 0; out.length < n && guard < 4000; guard++) {
       const h = pool[Math.floor(rng() * pool.length)];
       const u = pool[Math.floor(rng() * pool.length)];
       const ratio = h.kg / u.kg;
@@ -237,12 +242,13 @@
     // Ответ считается в целых штуках, поэтому попадание в него — это полные 100 очков.
     const score = guess === need ? 100
       : Math.round(100 * Math.max(0, 1 - Math.abs(Math.log(f)) / Math.log(level.zeroAt)));
-    return { r, guess, f, score, need, hinted: Boolean(hintLog[i]) };
+    return { r, guess, f, score, need, hinted: Boolean(hintLog[i]), swapped: i === swapAt };
   }
 
   // Партия дня на каждом уровне одинакова у всех и собрана из всех предметов,
   // свободная игра — из предметов коллекции.
-  // Недоигранная партия дня продолжается с того же раунда.
+  // Недоигранная партия дня продолжается с того же раунда. Один её раунд можно переиграть
+  // за видео: он заменяется запасным, тоже одинаковым у всех.
   function startGame(asDaily) {
     const daily = dailyToday();
     const entry = daily[level.id];
@@ -250,11 +256,17 @@
     isTutorial = false;
     run++;
     save.level = level.id;
+    spare = null; swapAt = null; finished = false;
     if (isDaily) {
-      rounds = makeRounds(mulberry32(dailySeed()), new Set(), OBJECTS);
+      rounds = makeRounds(mulberry32(dailySeed()), new Set(), OBJECTS, ROUNDS + 1);
+      if (rounds.length > ROUNDS) spare = rounds.pop();
       if (!entry) daily[level.id] = { done: false, total: 0, guesses: [], hints: {} };
       hintLog = daily[level.id].hints || (daily[level.id].hints = {});
-      results = daily[level.id].guesses.slice(0, ROUNDS - 1).map((g, i) => judge(rounds[i], g, i));
+      if (spare && daily[level.id].swap != null) {
+        swapAt = daily[level.id].swap;
+        rounds[swapAt] = spare;
+      }
+      results = daily[level.id].guesses.slice(0, ROUNDS).map((g, i) => judge(rounds[i], g, i));
       storeSave();
     } else {
       rounds = makeRounds(mulberry32(Math.floor(Math.random() * 1e9)), new Set(loadRecent()), collection());
@@ -269,6 +281,8 @@
     el.start.hidden = true;
     el.summary.hidden = true;
     enter();
+    // Все ответы даны, но итоги не открывались: страницу обновили на последнем раунде.
+    if (idx === ROUNDS) return showSummary();
     startRound();
   }
 
@@ -313,6 +327,7 @@
   }
 
   function toMenu() {
+    if (isDaily && results.length === ROUNDS && !finished) finishGame();
     run++;
     phase = 'idle';
     Platform.play(false);
@@ -362,6 +377,7 @@
     el.count.classList.remove('true');
     el.lock.classList.remove('open');
     el.result.classList.add('empty');
+    el.swap.hidden = true;
     el.verdict.textContent = '';
     el.fact.textContent = '';
     el.controls.classList.remove('off');
@@ -448,6 +464,23 @@
     refreshHints();
   }
 
+  const canSwap = () => isDaily && Platform.hasAds && spare && swapAt === null;
+
+  // Переигровка раскрытого раунда партии дня: ответ уже показан, поэтому раунд заменяется запасным.
+  async function swapRound() {
+    if (phase !== 'done' || !canSwap()) return;
+    const my = run;
+    if (!await Platform.rewarded() || my !== run) return;
+    const entry = dailyToday()[level.id];
+    swapAt = entry.swap = idx;
+    entry.guesses.pop();
+    delete hintLog[idx];
+    total -= results.pop().score;
+    rounds[idx] = spare;
+    storeSave();
+    startRound();
+  }
+
   async function earnHint() {
     if (phase !== 'guess') return;
     const my = run;
@@ -507,6 +540,7 @@
   });
   el.hintBtns.forEach((b) => b.addEventListener('click', () => useHint(b.dataset.hint)));
   el.hintAd.addEventListener('click', earnHint);
+  el.swap.addEventListener('click', swapRound);
   // На площадке долгое нажатие не должно открывать меню браузера.
   document.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -524,10 +558,10 @@
   el.openAlbum.addEventListener('click', showAlbum);
   el.albumBack.addEventListener('click', () => history.back());
   el.share.addEventListener('click', async () => {
-    // Раунды с подсказкой отмечены кружком вместо квадрата.
+    // Раунды с подсказкой и переигранный раунд отмечены кружком вместо квадрата.
     const squares = results.map((r) => {
       const i = r.score >= GOOD ? 0 : r.score >= OK ? 1 : 2;
-      return (r.hinted ? ['🟢', '🟡', '🔴'] : ['🟩', '🟨', '🟥'])[i];
+      return (r.hinted || r.swapped ? ['🟢', '🟡', '🔴'] : ['🟩', '🟨', '🟥'])[i];
     }).join('');
     const text = `Глазомер · вес · ${level.title.toLowerCase()} — ${total} из ${ROUNDS * 100}\n${squares}`;
     try {
@@ -562,7 +596,8 @@
     const free = Object.values(daily).some((e) => e.done);
     const day = !entry ? `${ROUNDS} раундов, одинаковых у всех`
       : entry.done ? `Сыграна: ${entry.total} из ${ROUNDS * 100}`
-      : `Продолжить: раунд ${entry.guesses.length + 1} из ${ROUNDS}`;
+      : entry.guesses.length < ROUNDS ? `Продолжить: раунд ${entry.guesses.length + 1} из ${ROUNDS}`
+      : 'Доиграна, открыть итоги';
     el.playDaily.innerHTML = `Партия дня<small>${day}</small>`;
     el.playDaily.disabled = !open || Boolean(entry && entry.done);
     el.playFree.innerHTML = `Свободная игра<small>${free ? 'Предметы из твоей коллекции' : 'Откроется после партии дня'}</small>`;
@@ -573,6 +608,7 @@
 
   // Записывает итог доигранной партии: рекорд уровня, партию дня, серию дней и награды.
   function finishGame() {
+    finished = true;
     newBest = total > (save.best[level.id] || 0);
     if (newBest) save.best[level.id] = total;
     if (isDaily) {
@@ -582,7 +618,7 @@
       if (save.streak.last !== dayKey()) save.streak = { count: streakNow() + 1, last: dayKey() };
     }
     reward();
-    adDue = true;
+    if (++played % AD_EVERY === 0) adDue = true;
     storeSave();
   }
 
@@ -606,7 +642,8 @@
       dailyToday()[level.id].guesses.push(count);
       storeSave();
     }
-    if (results.length === ROUNDS) finishGame();
+    // Пока последний раунд можно переиграть, итог партии записывается при выходе из раунда.
+    if (results.length === ROUNDS && !canSwap()) finishGame();
 
     setTimeout(() => {
       if (my !== run) return;
@@ -638,6 +675,7 @@
           + (isTutorial ? `<br>Чем ближе, тем больше очков: до 100 за раунд, в партии ${ROUNDS} раундов.` : '');
         el.main.textContent = isTutorial ? 'Играть' : idx + 1 < ROUNDS ? 'Дальше' : 'Итоги';
         el.main.disabled = false;
+        el.swap.hidden = !canSwap();
         phase = 'done';
       };
       requestAnimationFrame(tick);
@@ -648,6 +686,11 @@
     if (isTutorial) return finishTutorial();
     idx++;
     if (idx < ROUNDS) return startRound();
+    showSummary();
+  }
+
+  function showSummary() {
+    if (!finished) finishGame();
     idx = ROUNDS - 1;
     Platform.play(false);
     el.sumTotal.innerHTML = `${total} <small>из ${ROUNDS * 100} · ${level.title.toLowerCase()}</small>`;
@@ -658,7 +701,7 @@
       n ? `серия ${n} ${plural(n, ['день', 'дня', 'дней'])}` : '',
     ].filter(Boolean).join(' · ');
     el.sumSquares.innerHTML = results
-      .map((x) => `<i class="${x.score >= GOOD ? 's-good' : x.score >= OK ? 's-mid' : 's-bad'}${x.hinted ? ' hinted' : ''}"></i>`).join('');
+      .map((x) => `<i class="${x.score >= GOOD ? 's-good' : x.score >= OK ? 's-mid' : 's-bad'}${x.hinted || x.swapped ? ' hinted' : ''}"></i>`).join('');
     el.sumList.innerHTML = results
       .map((x) => `<li><span>${cap(x.r.h.forms[0])} ≈ ${num(x.need)} ${plural(x.need, x.r.u.forms)}</span><span>+${x.score}</span></li>`)
       .join('');
@@ -730,6 +773,8 @@
       storeLocal();
     }
     level = LEVELS.find((lv) => lv.id === save.level && unlocked(lv)) || LEVELS[0];
+    // Новичку, который ещё проходит обучение, реклама при первой партии не показывается.
+    adDue = save.tutorial;
     if (save.tutorial) showStart(); else startTutorial();
     requestAnimationFrame(frame);
     Platform.ready();
