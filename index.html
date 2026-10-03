@@ -43,6 +43,12 @@
     </div>
 
     <div id="controls">
+      <div id="hints">
+        <span id="hint-count"></span>
+        <button type="button" data-hint="weight">Вес</button>
+        <button type="button" data-hint="range">Диапазон</button>
+        <button type="button" data-hint="hall">Зал</button>
+      </div>
       <div class="stepper">
         <button id="minus" type="button" aria-label="Меньше">−</button>
         <div id="count"></div>
@@ -60,6 +66,16 @@
       <p class="lead">Сколько одного весит другое? Прикинь на глаз и отпусти весы.</p>
       <p id="streak"></p>
       <div id="levels"></div>
+      <button id="open-album" type="button" class="ghost"></button>
+    </div>
+  </section>
+
+  <section id="album" class="overlay" hidden>
+    <div class="card">
+      <div class="brand">Коллекция <span id="album-count"></span></div>
+      <p id="album-next"></p>
+      <div id="album-grid"></div>
+      <button id="album-back" type="button">Назад</button>
     </div>
   </section>
 
@@ -70,8 +86,9 @@
       <p id="sum-meta"></p>
       <div id="sum-squares"></div>
       <ul id="sum-list"></ul>
+      <div id="sum-new"></div>
       <button id="share" type="button" class="ghost">Скопировать результат</button>
-      <button id="change" type="button" class="ghost">Сменить уровень</button>
+      <button id="change" type="button" class="ghost">В меню</button>
       <button id="again" type="button">Ещё партия</button>
     </div>
   </section>
