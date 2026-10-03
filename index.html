@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <title>Глазомер — вес</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app">
+    <header>
+      <div class="brand">Глазомер <span>· вес</span></div>
+      <div class="meta"><span id="level"></span><span id="round">1 / 6</span><span id="total">0</span></div>
+    </header>
+
+    <h1 id="question"></h1>
+
+    <svg id="stage" viewBox="0 0 360 270" aria-hidden="true">
+      <path class="ink" d="M180 60V250M140 250H220"/>
+      <g id="left-pan">
+        <path class="rope" d="M0 0L-45 95M0 0L45 95"/>
+        <path class="ink" d="M-54 95H54"/>
+        <g id="ref" class="art ref" transform="translate(-30 33.5) scale(0.6)"></g>
+        <g id="ref-tag" class="tag ref"><rect x="-38" y="102" width="76" height="21" rx="5"/><text y="117" text-anchor="middle"></text></g>
+      </g>
+      <g id="right-pan">
+        <path class="rope" d="M0 0L-45 95M0 0L45 95"/>
+        <path class="ink" d="M-54 95H54"/>
+        <g id="pile" class="art guess"></g>
+        <g id="unit-tag" class="tag true"><rect x="-38" y="102" width="76" height="21" rx="5"/><text y="117" text-anchor="middle"></text></g>
+      </g>
+      <path id="beam" class="ink" d="M65 60H295"/>
+      <circle class="pivot" cx="180" cy="60" r="5"/>
+      <g id="lock">
+        <rect x="170" y="62" width="20" height="16" rx="3"/>
+        <path d="M174 62V57a6 6 0 0 1 12 0v5"/>
+      </g>
+    </svg>
+
+    <div id="result" class="plate">
+      <p id="verdict"></p>
+      <p id="fact"></p>
+    </div>
+
+    <div id="controls">
+      <div class="stepper">
+        <button id="minus" type="button" aria-label="Меньше">−</button>
+        <div id="count"></div>
+        <button id="plus" type="button" aria-label="Больше">+</button>
+      </div>
+      <input id="slider" type="range" min="0" max="1000" step="1" aria-label="Количество">
+    </div>
+
+    <button id="main" type="button">Отпустить весы</button>
+  </main>
+
+  <section id="start" class="overlay">
+    <div class="card">
+      <div class="brand">Глазомер <span>· вес</span></div>
+      <p class="lead">Сколько одного весит другое? Прикинь на глаз и отпусти весы.</p>
+      <div id="levels"></div>
+    </div>
+  </section>
+
+  <section id="summary" class="overlay" hidden>
+    <div class="card">
+      <div class="brand">Глазомер <span>· вес</span></div>
+      <div id="sum-total"></div>
+      <div id="sum-squares"></div>
+      <ul id="sum-list"></ul>
+      <button id="share" type="button" class="ghost">Скопировать результат</button>
+      <button id="change" type="button" class="ghost">Сменить уровень</button>
+      <button id="again" type="button">Ещё партия</button>
+    </div>
+  </section>
+
+  <script src="data.js"></script>
+  <script src="data2.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>

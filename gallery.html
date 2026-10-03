@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Глазомер — все силуэты</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    body { user-select: text; }
+    #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 6px; padding: 10px; }
+    #grid div { font-size: 11px; text-align: center; background: var(--paper); }
+    #grid svg { width: 100%; border: 1px dashed #bbb; }
+  </style>
+</head>
+<body>
+  <div id="grid"></div>
+  <script src="data.js"></script>
+  <script src="data2.js"></script>
+  <script>
+    document.getElementById('grid').innerHTML = OBJECTS.map((o, i) =>
+      `<div><svg viewBox="-4 -4 108 108"><g class="art ${i % 2 ? 'guess' : 'ref'}">${o.art}</g></svg>${i + 1}. ${o.name}</div>`).join('');
+  </script>
+</body>
+</html>
