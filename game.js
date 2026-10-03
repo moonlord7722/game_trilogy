@@ -35,7 +35,8 @@
     result: $('result'), verdict: $('verdict'), fact: $('fact'),
     controls: $('controls'), count: $('count'), slider: $('slider'),
     minus: $('minus'), plus: $('plus'), main: $('main'),
-    hints: $('hints'), hintCount: $('hint-count'), hintBtns: [...document.querySelectorAll('#hints button')],
+    hints: $('hints'), hintCount: $('hint-count'), hintAd: $('hint-ad'),
+    hintBtns: [...document.querySelectorAll('#hints button[data-hint]')],
     exit: $('exit'), leave: $('leave'), leaveStay: $('leave-stay'), leaveGo: $('leave-go'),
     levelNote: $('level-note'), playDaily: $('play-daily'), playFree: $('play-free'),
     start: $('start'), levels: $('levels'), streak: $('streak'), sumMeta: $('sum-meta'),
@@ -59,6 +60,8 @@
   // inside — в истории браузера лежит запись партии или коллекции, «назад» возвращает в меню.
   let inside = false, leaving = false;
   let gained = { items: [], hint: false, level: null };
+  // После доигранной партии перед следующей показывается реклама, если площадка её даёт.
+  let adDue = false;
 
   // ---------- утилиты ----------
 
@@ -112,7 +115,7 @@
   // best — рекорд по уровням, streak — серия дней с доигранной партией дня,
   // daily — партии дня за дату day: { done, total, guesses, hints } по id уровня,
   // owned — размер коллекции, hints — запас подсказок, tutorial — обучение пройдено,
-  // level — последний выбранный уровень.
+  // level — последний выбранный уровень, t — время записи: по нему выбирается между браузером и облаком.
   function loadSave() {
     const blank = {
       best: {}, streak: { count: 0, last: '' }, day: '', daily: {},
@@ -124,8 +127,14 @@
     } catch { return blank; }
   }
 
-  function storeSave() {
+  function storeLocal() {
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch { /* без хранилища играем как есть */ }
+  }
+
+  function storeSave() {
+    save.t = Date.now();
+    storeLocal();
+    Platform.store(save);
   }
 
   function dayKey(shift = 0) {
@@ -263,6 +272,14 @@
     startRound();
   }
 
+  async function launch(asDaily) {
+    if (adDue) {
+      adDue = false;
+      await Platform.interstitial();
+    }
+    startGame(asDaily);
+  }
+
   // Обучение — один раунд на лёгком уровне без записи в сохранение.
   function startTutorial() {
     const [h, u] = TUTORIAL.map(byName);
@@ -298,6 +315,7 @@
   function toMenu() {
     run++;
     phase = 'idle';
+    Platform.play(false);
     el.controls.classList.remove('pulse');
     el.main.classList.remove('pulse');
     el.leave.hidden = true;
@@ -328,6 +346,7 @@
   function startRound() {
     const r = rounds[idx];
     phase = 'guess';
+    Platform.play(true);
     angle = 0; vel = 0;
     lo = 1; hi = level.slider;
     el.round.textContent = isTutorial ? '' : `${idx + 1} / ${ROUNDS}`;
@@ -407,6 +426,10 @@
     const taken = hintLog[idx];
     el.hints.hidden = isTutorial;
     el.hintCount.textContent = `Подсказки: ${save.hints}`;
+    // Когда запас кончился, вместо счётчика предлагается подсказка за просмотр видео.
+    const offer = Platform.hasAds && save.hints < 1 && !taken;
+    el.hintCount.hidden = offer;
+    el.hintAd.hidden = !offer;
     el.hintBtns.forEach((b) => {
       b.hidden = b.dataset.hint === 'weight' && level.showRef;
       b.disabled = Boolean(taken) || save.hints < 1;
@@ -423,6 +446,15 @@
     storeSave();
     applyHint(type);
     refreshHints();
+  }
+
+  async function earnHint() {
+    if (phase !== 'guess') return;
+    const my = run;
+    if (!await Platform.rewarded()) return;
+    save.hints++;
+    storeSave();
+    if (my === run) refreshHints();
   }
 
   // ---------- ввод ----------
@@ -474,18 +506,21 @@
     if (phase === 'guess') setCount(sliderToCount(+el.slider.value), true);
   });
   el.hintBtns.forEach((b) => b.addEventListener('click', () => useHint(b.dataset.hint)));
+  el.hintAd.addEventListener('click', earnHint);
+  // На площадке долгое нажатие не должно открывать меню браузера.
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
 
   el.main.addEventListener('click', () => {
     if (phase === 'guess') release();
     else if (phase === 'done') next();
   });
-  el.again.addEventListener('click', () => startGame(false));
+  el.again.addEventListener('click', () => launch(false));
   el.change.addEventListener('click', () => history.back());
   el.exit.addEventListener('click', () => (isTutorial ? finishTutorial() : history.back()));
   el.leaveStay.addEventListener('click', () => { el.leave.hidden = true; });
   el.leaveGo.addEventListener('click', () => { leaving = true; history.back(); });
-  el.playDaily.addEventListener('click', () => startGame(true));
-  el.playFree.addEventListener('click', () => startGame(false));
+  el.playDaily.addEventListener('click', () => launch(true));
+  el.playFree.addEventListener('click', () => launch(false));
   el.openAlbum.addEventListener('click', showAlbum);
   el.albumBack.addEventListener('click', () => history.back());
   el.share.addEventListener('click', async () => {
@@ -547,6 +582,7 @@
       if (save.streak.last !== dayKey()) save.streak = { count: streakNow() + 1, last: dayKey() };
     }
     reward();
+    adDue = true;
     storeSave();
   }
 
@@ -613,6 +649,7 @@
     idx++;
     if (idx < ROUNDS) return startRound();
     idx = ROUNDS - 1;
+    Platform.play(false);
     el.sumTotal.innerHTML = `${total} <small>из ${ROUNDS * 100} · ${level.title.toLowerCase()}</small>`;
     const n = streakNow();
     el.sumMeta.textContent = [
@@ -665,7 +702,8 @@
   }
 
   function frame(t) {
-    const dt = Math.min(0.033, (t - lastT) / 1000 || 0);
+    // Пока площадка держит игру на паузе (реклама, свёрнутая вкладка), весы стоят.
+    const dt = Platform.paused ? 0 : Math.min(0.033, (t - lastT) / 1000 || 0);
     lastT = t;
     let target = 0;
     // После раскрытия весы стоят ровно: остаток от округления до целых штук не показываем.
@@ -684,7 +722,18 @@
     requestAnimationFrame(frame);
   }
 
-  level = LEVELS.find((lv) => lv.id === save.level && unlocked(lv)) || LEVELS[0];
-  if (save.tutorial) showStart(); else startTutorial();
-  requestAnimationFrame(frame);
+  // Из браузера и облака берётся то сохранение, которое записано позже.
+  async function boot() {
+    const cloud = await Platform.init();
+    if (cloud && (cloud.t || 0) > (save.t || 0)) {
+      Object.assign(save, cloud);
+      storeLocal();
+    }
+    level = LEVELS.find((lv) => lv.id === save.level && unlocked(lv)) || LEVELS[0];
+    if (save.tutorial) showStart(); else startTutorial();
+    requestAnimationFrame(frame);
+    Platform.ready();
+  }
+
+  boot();
 })();

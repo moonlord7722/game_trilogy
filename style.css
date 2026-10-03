@@ -18,7 +18,11 @@ html, body {
   color: var(--ink);
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
   user-select: none;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
@@ -206,6 +210,7 @@ button { font-family: inherit; cursor: pointer; }
   background: var(--paper); color: var(--ink);
   font-size: 14px; font-weight: 600;
 }
+#hint-ad { margin-right: auto; }
 #hints button:disabled { opacity: 0.4; cursor: default; }
 #hints button.on { background: var(--ink); color: var(--paper); opacity: 1; }
 
