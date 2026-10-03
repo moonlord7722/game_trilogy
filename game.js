@@ -13,6 +13,7 @@
   const PIVOT = { x: 180, y: 60 }, ARM = 115;
   // Сколько последних эталонов не повторять в свободной игре.
   const RECENT_KEEP = 12, RECENT_KEY = 'glazomer-recent';
+  const SAVE_KEY = 'glazomer-save';
 
   const $ = (id) => document.getElementById(id);
   const el = {
@@ -22,16 +23,17 @@
     result: $('result'), verdict: $('verdict'), fact: $('fact'),
     controls: $('controls'), count: $('count'), slider: $('slider'),
     minus: $('minus'), plus: $('plus'), main: $('main'),
-    start: $('start'), levels: $('levels'),
+    start: $('start'), levels: $('levels'), streak: $('streak'), sumMeta: $('sum-meta'),
     summary: $('summary'), sumTotal: $('sum-total'), sumSquares: $('sum-squares'),
     sumList: $('sum-list'), share: $('share'), change: $('change'), again: $('again'),
   };
 
   let level = LEVELS[1];
-  const dailyPlayed = new Set();
+  let isDaily = false;
   let rounds = [], idx = 0, total = 0, results = [];
   let count = 1, shown = 1, phase = 'idle';
   let angle = 0, vel = 0, lastT = 0;
+  let newBest = false;
 
   // ---------- утилиты ----------
 
@@ -77,6 +79,41 @@
     try { localStorage.setItem(RECENT_KEY, JSON.stringify(names.slice(-RECENT_KEEP))); } catch { /* без хранилища играем как есть */ }
   }
 
+  // ---------- сохранение ----------
+
+  // best — рекорд по уровням, streak — серия дней с доигранной партией дня,
+  // daily — партии дня за дату day: { done, total, guesses } по id уровня.
+  function loadSave() {
+    const blank = { best: {}, streak: { count: 0, last: '' }, day: '', daily: {} };
+    try {
+      const s = JSON.parse(localStorage.getItem(SAVE_KEY));
+      return s && typeof s === 'object' ? { ...blank, ...s } : blank;
+    } catch { return blank; }
+  }
+
+  function storeSave() {
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch { /* без хранилища играем как есть */ }
+  }
+
+  function dayKey(shift = 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + shift);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  // Партии дня хранятся только за сегодня: с новой датой вчерашние сбрасываются.
+  function dailyToday() {
+    if (save.day !== dayKey()) { save.day = dayKey(); save.daily = {}; }
+    return save.daily;
+  }
+
+  function streakNow() {
+    const { count, last } = save.streak;
+    return last === dayKey() || last === dayKey(-1) ? count : 0;
+  }
+
+  const save = loadSave();
+
   // ---------- партия ----------
 
   function makeRounds(rng, avoid) {
@@ -99,17 +136,31 @@
     return (d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()) * 10 + LEVELS.indexOf(level);
   }
 
+  function judge(r, guess) {
+    const f = guess / r.ratio;
+    const score = Math.round(100 * Math.max(0, 1 - Math.abs(Math.log(f)) / Math.log(level.zeroAt)));
+    return { r, guess, f, score, need: Math.max(1, Math.round(r.ratio)) };
+  }
+
   // Первая партия дня на каждом уровне одинакова у всех, дальше случайные.
+  // Недоигранная партия дня продолжается с того же раунда.
   function startGame() {
-    if (dailyPlayed.has(level.id)) {
-      rounds = makeRounds(mulberry32(Math.floor(Math.random() * 1e9)), new Set(loadRecent()));
-    } else {
-      dailyPlayed.add(level.id);
+    const daily = dailyToday();
+    const entry = daily[level.id];
+    isDaily = !(entry && entry.done);
+    if (isDaily) {
       rounds = makeRounds(mulberry32(dailySeed()), new Set());
+      if (!entry) daily[level.id] = { done: false, total: 0, guesses: [] };
+      results = daily[level.id].guesses.slice(0, ROUNDS - 1).map((g, i) => judge(rounds[i], g));
+      storeSave();
+    } else {
+      rounds = makeRounds(mulberry32(Math.floor(Math.random() * 1e9)), new Set(loadRecent()));
+      results = [];
     }
     saveRecent(loadRecent().concat(rounds.map((r) => r.h.name)));
-    idx = 0; total = 0; results = [];
-    el.level.textContent = level.title;
+    idx = results.length;
+    total = results.reduce((sum, x) => sum + x.score, 0);
+    el.level.textContent = level.title + (isDaily ? ' · день' : '');
     el.start.hidden = true;
     el.summary.hidden = true;
     startRound();
@@ -189,7 +240,7 @@
   el.again.addEventListener('click', startGame);
   el.change.addEventListener('click', () => {
     el.summary.hidden = true;
-    el.start.hidden = false;
+    showStart();
   });
   el.share.addEventListener('click', async () => {
     const squares = results.map((r) => (r.score >= GOOD ? '🟩' : r.score >= OK ? '🟨' : '🟥')).join('');
@@ -202,13 +253,38 @@
     }
   });
 
-  LEVELS.forEach((lv) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.innerHTML = `${lv.title}<small>${lv.hint}</small>`;
-    b.addEventListener('click', () => { level = lv; startGame(); });
-    el.levels.appendChild(b);
-  });
+  function showStart() {
+    const daily = dailyToday();
+    const n = streakNow();
+    el.streak.textContent = n ? `Серия: ${n} ${plural(n, ['день', 'дня', 'дней'])} подряд` : '';
+    el.levels.textContent = '';
+    LEVELS.forEach((lv) => {
+      const entry = daily[lv.id];
+      const day = !entry ? 'Партия дня ждёт'
+        : entry.done ? `Партия дня: ${entry.total} из ${ROUNDS * 100}`
+        : `Партия дня: раунд ${entry.guesses.length + 1} из ${ROUNDS}`;
+      const best = save.best[lv.id] ? ` · рекорд ${save.best[lv.id]}` : '';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.innerHTML = `${lv.title}<small>${lv.hint}</small><small class="state">${day}${best}</small>`;
+      b.addEventListener('click', () => { level = lv; startGame(); });
+      el.levels.appendChild(b);
+    });
+    el.start.hidden = false;
+  }
+
+  // Записывает итог доигранной партии: рекорд уровня, партию дня и серию дней.
+  function finishGame() {
+    newBest = total > (save.best[level.id] || 0);
+    if (newBest) save.best[level.id] = total;
+    if (isDaily) {
+      const entry = dailyToday()[level.id];
+      entry.done = true;
+      entry.total = total;
+      if (save.streak.last !== dayKey()) save.streak = { count: streakNow() + 1, last: dayKey() };
+    }
+    storeSave();
+  }
 
   // ---------- раскрытие ----------
 
@@ -219,11 +295,16 @@
     el.main.disabled = true;
     el.lock.classList.add('open');
 
-    const f = count / r.ratio;
-    const score = Math.round(100 * Math.max(0, 1 - Math.abs(Math.log(f)) / Math.log(level.zeroAt)));
-    const need = Math.max(1, Math.round(r.ratio));
-    results.push({ r, guess: count, need, score });
+    const res = judge(r, count);
+    const { f, score, need } = res;
+    results.push(res);
     total += score;
+    // Ответ сохраняется сразу, чтобы обновление страницы не давало переиграть раунд.
+    if (isDaily) {
+      dailyToday()[level.id].guesses.push(count);
+      storeSave();
+    }
+    if (results.length === ROUNDS) finishGame();
 
     setTimeout(() => {
       el.verdict.textContent =
@@ -260,6 +341,12 @@
     if (idx < ROUNDS) return startRound();
     idx = ROUNDS - 1;
     el.sumTotal.innerHTML = `${total} <small>из ${ROUNDS * 100} · ${level.title.toLowerCase()}</small>`;
+    const n = streakNow();
+    el.sumMeta.textContent = [
+      isDaily ? 'Партия дня' : 'Свободная игра',
+      newBest ? 'новый рекорд' : `рекорд ${save.best[level.id]}`,
+      n ? `серия ${n} ${plural(n, ['день', 'дня', 'дней'])}` : '',
+    ].filter(Boolean).join(' · ');
     el.sumSquares.innerHTML = results
       .map((x) => `<i class="${x.score >= GOOD ? 's-good' : x.score >= OK ? 's-mid' : 's-bad'}"></i>`).join('');
     el.sumList.innerHTML = results
@@ -317,5 +404,6 @@
     requestAnimationFrame(frame);
   }
 
+  showStart();
   requestAnimationFrame(frame);
 })();
