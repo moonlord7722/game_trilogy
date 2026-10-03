@@ -33,7 +33,7 @@ body {
 
 #app {
   max-width: 480px;
-  min-height: 100dvh;
+  height: 100dvh;
   margin: 0 auto;
   padding: 12px 16px 20px;
   display: flex;
@@ -44,7 +44,13 @@ body {
 header {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
+}
+#exit {
+  padding: 5px 12px;
+  border: 2px solid var(--ink); border-radius: 999px;
+  background: var(--paper); color: var(--ink);
+  font-size: 14px; font-weight: 600;
 }
 
 .brand { font-weight: 700; letter-spacing: 0.02em; }
@@ -63,7 +69,7 @@ h1 {
 h1 .ref { color: var(--ref); }
 h1 .guess { color: var(--guess); }
 
-#stage { width: 100%; flex: 1 1 auto; min-height: 220px; max-height: 46dvh; }
+#stage { width: 100%; flex: 1 1 0; min-height: 0; }
 .ink { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; fill: none; }
 .rope { stroke: var(--ink); stroke-width: 1; fill: none; opacity: 0.6; }
 .pivot { fill: var(--paper); stroke: var(--ink); stroke-width: 3; }
@@ -125,7 +131,7 @@ h1 .guess { color: var(--guess); }
 
 #slider { width: 100%; accent-color: var(--guess); height: 28px; }
 
-#main, #again, #share, #change, #open-album, #album-back {
+#main, #again, #share, #change, #open-album, #album-back, #leave-stay, #leave-go {
   width: 100%;
   padding: 16px;
   border-radius: 12px;
@@ -146,18 +152,26 @@ button { font-family: inherit; cursor: pointer; }
 }
 .overlay[hidden] { display: none; }
 .lead { margin: 0; font-size: 17px; line-height: 1.4; }
-#levels { display: flex; flex-direction: column; gap: 10px; }
+#levels { display: flex; border: 2px solid var(--ink); border-radius: 12px; overflow: hidden; }
 #levels button {
+  flex: 1; padding: 10px 4px;
+  border: 0; background: var(--paper); color: var(--ink);
+  font-size: 15px; font-weight: 600;
+}
+#levels button + button { border-left: 2px solid var(--ink); }
+#levels button.locked { color: var(--ink-soft); font-weight: 400; }
+#levels button.on { background: var(--ink); color: var(--paper); }
+#level-note { margin: -6px 0 0; font-size: 14px; color: var(--ink-soft); }
+#plays { display: flex; flex-direction: column; gap: 10px; }
+#plays button {
   padding: 14px 16px;
   border: 2px solid var(--ink); border-radius: 12px;
   background: var(--paper); color: var(--ink);
   text-align: left; font-size: 18px; font-weight: 600;
 }
-#levels button small { display: block; margin-top: 2px; font-size: 14px; font-weight: 400; color: var(--ink-soft); }
-#levels button:disabled { opacity: 0.5; cursor: default; }
-#levels button:active { background: var(--ink); color: var(--paper); }
-#levels button:active small { color: var(--paper); }
-#levels button small.state { margin-top: 6px; color: var(--ink); font-variant-numeric: tabular-nums; }
+#plays button small { display: block; margin-top: 2px; font-size: 14px; font-weight: 400; font-variant-numeric: tabular-nums; }
+#plays button:disabled { opacity: 0.5; cursor: default; }
+#plays button:not(:disabled):active { background: var(--ink); color: var(--paper); }
 #streak, #sum-meta { margin: 0; font-size: 15px; font-weight: 600; }
 #streak:empty { display: none; }
 .card {

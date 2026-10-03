@@ -36,6 +36,8 @@
     controls: $('controls'), count: $('count'), slider: $('slider'),
     minus: $('minus'), plus: $('plus'), main: $('main'),
     hints: $('hints'), hintCount: $('hint-count'), hintBtns: [...document.querySelectorAll('#hints button')],
+    exit: $('exit'), leave: $('leave'), leaveStay: $('leave-stay'), leaveGo: $('leave-go'),
+    levelNote: $('level-note'), playDaily: $('play-daily'), playFree: $('play-free'),
     start: $('start'), levels: $('levels'), streak: $('streak'), sumMeta: $('sum-meta'),
     summary: $('summary'), sumTotal: $('sum-total'), sumSquares: $('sum-squares'),
     sumList: $('sum-list'), sumNew: $('sum-new'), share: $('share'), change: $('change'), again: $('again'),
@@ -52,6 +54,10 @@
   let hintLog = {};
   let angle = 0, vel = 0, lastT = 0;
   let newBest = false;
+  // run растёт при каждом входе и выходе из партии: по нему отложенные шаги раскрытия понимают, что устарели.
+  let run = 0;
+  // inside — в истории браузера лежит запись партии или коллекции, «назад» возвращает в меню.
+  let inside = false, leaving = false;
   let gained = { items: [], hint: false, level: null };
 
   // ---------- утилиты ----------
@@ -105,11 +111,12 @@
 
   // best — рекорд по уровням, streak — серия дней с доигранной партией дня,
   // daily — партии дня за дату day: { done, total, guesses, hints } по id уровня,
-  // owned — размер коллекции, hints — запас подсказок, tutorial — обучение пройдено.
+  // owned — размер коллекции, hints — запас подсказок, tutorial — обучение пройдено,
+  // level — последний выбранный уровень.
   function loadSave() {
     const blank = {
       best: {}, streak: { count: 0, last: '' }, day: '', daily: {},
-      owned: STARTERS.length, hints: START_HINTS, tutorial: false,
+      owned: STARTERS.length, hints: START_HINTS, tutorial: false, level: 'easy',
     };
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
@@ -190,6 +197,7 @@
     el.albumGrid.innerHTML = collection().map(figure).join('')
       + '<figure class="locked"><div>?</div></figure>'.repeat(ORDER.length - save.owned);
     el.album.hidden = false;
+    enter();
   }
 
   // ---------- партия ----------
@@ -216,18 +224,23 @@
 
   function judge(r, guess, i) {
     const f = guess / r.ratio;
-    const score = Math.round(100 * Math.max(0, 1 - Math.abs(Math.log(f)) / Math.log(level.zeroAt)));
-    return { r, guess, f, score, need: Math.max(1, Math.round(r.ratio)), hinted: Boolean(hintLog[i]) };
+    const need = Math.max(1, Math.round(r.ratio));
+    // Ответ считается в целых штуках, поэтому попадание в него — это полные 100 очков.
+    const score = guess === need ? 100
+      : Math.round(100 * Math.max(0, 1 - Math.abs(Math.log(f)) / Math.log(level.zeroAt)));
+    return { r, guess, f, score, need, hinted: Boolean(hintLog[i]) };
   }
 
-  // Первая партия дня на каждом уровне одинакова у всех и собрана из всех предметов,
-  // дальше идёт свободная игра из предметов коллекции.
+  // Партия дня на каждом уровне одинакова у всех и собрана из всех предметов,
+  // свободная игра — из предметов коллекции.
   // Недоигранная партия дня продолжается с того же раунда.
-  function startGame() {
+  function startGame(asDaily) {
     const daily = dailyToday();
     const entry = daily[level.id];
-    isDaily = !(entry && entry.done);
+    isDaily = asDaily;
     isTutorial = false;
+    run++;
+    save.level = level.id;
     if (isDaily) {
       rounds = makeRounds(mulberry32(dailySeed()), new Set(), OBJECTS);
       if (!entry) daily[level.id] = { done: false, total: 0, guesses: [], hints: {} };
@@ -243,8 +256,10 @@
     idx = results.length;
     total = results.reduce((sum, x) => sum + x.score, 0);
     el.level.textContent = level.title + (isDaily ? ' · день' : '');
+    el.exit.textContent = '‹ Меню';
     el.start.hidden = true;
     el.summary.hidden = true;
+    enter();
     startRound();
   }
 
@@ -260,9 +275,55 @@
     idx = 0;
     total = 0;
     el.level.textContent = 'Обучение';
+    el.exit.textContent = 'Пропустить';
     el.start.hidden = true;
     startRound();
   }
+
+  function finishTutorial() {
+    isTutorial = false;
+    save.tutorial = true;
+    storeSave();
+    toMenu();
+  }
+
+  // ---------- навигация ----------
+
+  function enter() {
+    if (inside) return;
+    inside = true;
+    history.pushState({ glazomer: 1 }, '');
+  }
+
+  function toMenu() {
+    run++;
+    phase = 'idle';
+    el.controls.classList.remove('pulse');
+    el.main.classList.remove('pulse');
+    el.leave.hidden = true;
+    el.summary.hidden = true;
+    showStart();
+  }
+
+  // Кнопки «назад» на экране и в телефоне идут одним путём — через историю браузера.
+  // Из недоигранной свободной партии выпускаем только после подтверждения.
+  window.addEventListener('popstate', () => {
+    if (!inside) return;
+    if (!el.album.hidden) {
+      el.album.hidden = true;
+      inside = false;
+      return;
+    }
+    const midFree = !isDaily && el.summary.hidden && results.length < ROUNDS;
+    if (midFree && !leaving) {
+      history.pushState({ glazomer: 1 }, '');
+      el.leave.hidden = false;
+      return;
+    }
+    leaving = false;
+    inside = false;
+    toMenu();
+  });
 
   function startRound() {
     const r = rounds[idx];
@@ -418,13 +479,15 @@
     if (phase === 'guess') release();
     else if (phase === 'done') next();
   });
-  el.again.addEventListener('click', startGame);
-  el.change.addEventListener('click', () => {
-    el.summary.hidden = true;
-    showStart();
-  });
+  el.again.addEventListener('click', () => startGame(false));
+  el.change.addEventListener('click', () => history.back());
+  el.exit.addEventListener('click', () => (isTutorial ? finishTutorial() : history.back()));
+  el.leaveStay.addEventListener('click', () => { el.leave.hidden = true; });
+  el.leaveGo.addEventListener('click', () => { leaving = true; history.back(); });
+  el.playDaily.addEventListener('click', () => startGame(true));
+  el.playFree.addEventListener('click', () => startGame(false));
   el.openAlbum.addEventListener('click', showAlbum);
-  el.albumBack.addEventListener('click', () => { el.album.hidden = true; });
+  el.albumBack.addEventListener('click', () => history.back());
   el.share.addEventListener('click', async () => {
     // Раунды с подсказкой отмечены кружком вместо квадрата.
     const squares = results.map((r) => {
@@ -449,19 +512,26 @@
     ].filter(Boolean).join(' · ');
     el.levels.textContent = '';
     LEVELS.forEach((lv) => {
-      const entry = daily[lv.id];
-      const day = !unlocked(lv) ? `Откроется при ${lv.need} предметах в коллекции`
-        : !entry ? 'Партия дня ждёт'
-        : entry.done ? `Партия дня: ${entry.total} из ${ROUNDS * 100} · дальше свободная игра`
-        : `Партия дня: раунд ${entry.guesses.length + 1} из ${ROUNDS}`;
-      const best = save.best[lv.id] ? ` · рекорд ${save.best[lv.id]}` : '';
       const b = document.createElement('button');
       b.type = 'button';
-      b.disabled = !unlocked(lv);
-      b.innerHTML = `${lv.title}<small>${lv.hint}</small><small class="state">${day}${best}</small>`;
-      b.addEventListener('click', () => { level = lv; startGame(); });
+      b.textContent = lv.title;
+      b.className = (lv === level ? 'on ' : '') + (unlocked(lv) ? '' : 'locked');
+      b.addEventListener('click', () => { level = lv; showStart(); });
       el.levels.appendChild(b);
     });
+    const open = unlocked(level), entry = daily[level.id];
+    const best = save.best[level.id] ? ` · рекорд ${save.best[level.id]}` : '';
+    el.levelNote.textContent = open ? level.hint + best
+      : `Откроется при ${level.need} предметах в коллекции, сейчас ${save.owned}`;
+    // Свободная игра открывается на весь день после любой доигранной партии дня.
+    const free = Object.values(daily).some((e) => e.done);
+    const day = !entry ? `${ROUNDS} раундов, одинаковых у всех`
+      : entry.done ? `Сыграна: ${entry.total} из ${ROUNDS * 100}`
+      : `Продолжить: раунд ${entry.guesses.length + 1} из ${ROUNDS}`;
+    el.playDaily.innerHTML = `Партия дня<small>${day}</small>`;
+    el.playDaily.disabled = !open || Boolean(entry && entry.done);
+    el.playFree.innerHTML = `Свободная игра<small>${free ? 'Предметы из твоей коллекции' : 'Откроется после партии дня'}</small>`;
+    el.playFree.disabled = !open || !free;
     el.openAlbum.textContent = `Коллекция · ${save.owned} из ${ORDER.length}`;
     el.start.hidden = false;
   }
@@ -483,7 +553,7 @@
   // ---------- раскрытие ----------
 
   function release() {
-    const r = rounds[idx];
+    const r = rounds[idx], my = run;
     phase = 'swing';
     el.controls.classList.add('off');
     el.controls.classList.remove('pulse');
@@ -503,8 +573,10 @@
     if (results.length === ROUNDS) finishGame();
 
     setTimeout(() => {
+      if (my !== run) return;
       el.verdict.textContent =
-        score >= 90 ? `Почти точно · +${score}`
+        count === need ? `Точно! · +${score}`
+        : score >= 90 ? `Почти точно · +${score}`
         : f > 1 ? `Перебор в ${fmtTimes(f)} · +${score}`
         : `Недобор в ${fmtTimes(1 / f)} · +${score}`;
       el.fact.textContent = '';
@@ -513,6 +585,7 @@
     }, 1500);
 
     setTimeout(() => {
+      if (my !== run) return;
       phase = 'truth';
       el.pile.setAttribute('class', 'art true');
       el.count.classList.add('true');
@@ -520,6 +593,7 @@
       el.unitTag.classList.remove('off');
       const from = count, t0 = performance.now(), dur = 900;
       const tick = (t) => {
+        if (my !== run) return;
         const k = Math.min(1, (t - t0) / dur);
         const e = 1 - Math.pow(1 - k, 3);
         show(Math.max(1, Math.round(Math.exp(Math.log(from) + (Math.log(need) - Math.log(from)) * e))));
@@ -535,12 +609,7 @@
   }
 
   function next() {
-    if (isTutorial) {
-      isTutorial = false;
-      save.tutorial = true;
-      storeSave();
-      return showStart();
-    }
+    if (isTutorial) return finishTutorial();
     idx++;
     if (idx < ROUNDS) return startRound();
     idx = ROUNDS - 1;
@@ -615,6 +684,7 @@
     requestAnimationFrame(frame);
   }
 
+  level = LEVELS.find((lv) => lv.id === save.level && unlocked(lv)) || LEVELS[0];
   if (save.tutorial) showStart(); else startTutorial();
   requestAnimationFrame(frame);
 })();

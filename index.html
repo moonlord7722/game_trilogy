@@ -9,7 +9,7 @@
 <body>
   <main id="app">
     <header>
-      <div class="brand">Глазомер <span>· вес</span></div>
+      <button id="exit" type="button">‹ Меню</button>
       <div class="meta"><span id="level"></span><span id="round">1 / 6</span><span id="total">0</span></div>
     </header>
 
@@ -66,6 +66,11 @@
       <p class="lead">Сколько одного весит другое? Прикинь на глаз и отпусти весы.</p>
       <p id="streak"></p>
       <div id="levels"></div>
+      <p id="level-note"></p>
+      <div id="plays">
+        <button id="play-daily" type="button"></button>
+        <button id="play-free" type="button"></button>
+      </div>
       <button id="open-album" type="button" class="ghost"></button>
     </div>
   </section>
@@ -89,7 +94,15 @@
       <div id="sum-new"></div>
       <button id="share" type="button" class="ghost">Скопировать результат</button>
       <button id="change" type="button" class="ghost">В меню</button>
-      <button id="again" type="button">Ещё партия</button>
+      <button id="again" type="button">Свободная игра</button>
+    </div>
+  </section>
+
+  <section id="leave" class="overlay" hidden>
+    <div class="card">
+      <p class="lead">Выйти в меню? Свободная партия не сохранится.</p>
+      <button id="leave-stay" type="button">Остаться</button>
+      <button id="leave-go" type="button" class="ghost">Выйти</button>
     </div>
   </section>
 
