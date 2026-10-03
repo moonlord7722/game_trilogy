@@ -24,7 +24,7 @@
   const ACTIVE_STEP = 5, ACTIVE_UNTIL = 40;
   const START_HINTS = 3;
   // Реклама между партиями — при первом запуске партии за визит и дальше после каждых AD_EVERY доигранных.
-  const AD_EVERY = 5;
+  const AD_EVERY = 2;
   // Подсказка «диапазон» оставляет ответы, отличающиеся не больше чем в RANGE_HINT раз.
   const RANGE_HINT = 4;
   const TUTORIAL = ['человек', 'кот'];
