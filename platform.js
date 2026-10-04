@@ -4,6 +4,8 @@
 const Platform = (() => {
   // Сколько ждать SDK, прежде чем начать игру без него.
   const WAIT = 5000;
+  // Языки, на которые переведена игра. Язык берётся из SDK; остальным достаётся первый из списка.
+  const LANGS = ['ru'];
   let ysdk = null, player = null;
   let playing = false, paused = false;
 
@@ -36,6 +38,8 @@ const Platform = (() => {
     if (!got) return null;
     ysdk = got.sdk;
     player = got.p;
+    const lang = ysdk.environment?.i18n?.lang;
+    document.documentElement.lang = LANGS.includes(lang) ? lang : LANGS[0];
     ysdk.on('game_api_pause', () => { paused = true; });
     ysdk.on('game_api_resume', () => { paused = false; });
     return got.cloud;
