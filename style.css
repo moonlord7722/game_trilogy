@@ -233,3 +233,22 @@ figure.locked div {
   display: flex; align-items: center; justify-content: center;
   border-style: dashed; opacity: 0.4; font-size: 22px; font-weight: 700;
 }
+
+/* Широкий экран: весы слева на всю высоту, вопрос и управление справа. */
+@media (min-width: 820px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+  #app {
+    max-width: 1080px;
+    padding: 20px 24px 28px;
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    grid-template-rows: repeat(5, auto);
+    align-content: center;
+    column-gap: 40px;
+    row-gap: 16px;
+  }
+  header { grid-column: 1 / -1; }
+  #stage { grid-column: 1; grid-row: 2 / 6; align-self: center; height: auto; aspect-ratio: 3 / 2; }
+  h1, #result, #controls, #main { grid-column: 2; }
+  h1 { font-size: 28px; }
+  #result { margin-top: 0; }
+}
