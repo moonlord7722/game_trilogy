@@ -24,6 +24,7 @@
   const ACTIVE_STEP = 5, ACTIVE_UNTIL = 40;
   const START_HINTS = 3;
   // Реклама между партиями — при первом запуске партии за визит и дальше после каждых AD_EVERY доигранных.
+  // В первый визит игрока её нет.
   const AD_EVERY = 2;
   // Подсказка «диапазон» оставляет ответы, отличающиеся не больше чем в RANGE_HINT раз.
   const RANGE_HINT = 4;
@@ -62,8 +63,9 @@
   // inside — в истории браузера лежит запись партии или коллекции, «назад» возвращает в меню.
   let inside = false, leaving = false;
   let gained = { items: [], hint: false, level: null };
-  // adDue — перед следующей партией показать рекламу, played — партий доиграно за визит.
-  let adDue = false, played = 0;
+  // adDue — перед следующей партией показать рекламу, played — партий доиграно за визит,
+  // newcomer — первый визит игрока: в нём рекламы между партиями нет совсем.
+  let adDue = false, played = 0, newcomer = false;
   // Партия дня: spare — запасной раунд, swapAt — номер раунда, переигранного за видео,
   // finished — итог партии уже записан.
   let spare = null, swapAt = null, finished = false;
@@ -618,7 +620,7 @@
       if (save.streak.last !== dayKey()) save.streak = { count: streakNow() + 1, last: dayKey() };
     }
     reward();
-    if (++played % AD_EVERY === 0) adDue = true;
+    if (++played % AD_EVERY === 0 && !newcomer) adDue = true;
     storeSave();
   }
 
@@ -773,8 +775,8 @@
       storeLocal();
     }
     level = LEVELS.find((lv) => lv.id === save.level && unlocked(lv)) || LEVELS[0];
-    // Новичку, который ещё проходит обучение, реклама при первой партии не показывается.
-    adDue = save.tutorial;
+    newcomer = !save.tutorial;
+    adDue = !newcomer;
     if (save.tutorial) showStart(); else startTutorial();
     requestAnimationFrame(frame);
     Platform.ready();
