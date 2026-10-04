@@ -76,6 +76,8 @@ h1 .guess { color: var(--guess); }
 #stage { width: 100%; flex: 1 1 0; min-height: 0; }
 .ink { stroke: var(--ink); stroke-width: 3; stroke-linecap: round; fill: none; }
 .rope { stroke: var(--ink); stroke-width: 1; fill: none; opacity: 0.6; }
+/* Чаши увеличены в game.js, толщина линий подогнана под остальные весы. */
+#left-pan .ink, #right-pan .ink { stroke-width: 2.4; }
 .pivot { fill: var(--paper); stroke: var(--ink); stroke-width: 3; }
 .art { fill: currentColor; }
 .art.ref { color: var(--ref); }
@@ -93,9 +95,11 @@ h1 .guess { color: var(--guess); }
   padding: 10px 14px;
   border: 2px solid var(--ink); border-radius: 12px;
   background: var(--paper);
-  min-height: 92px;
+  min-height: 76px;
   display: flex; flex-direction: column; justify-content: center; gap: 4px;
 }
+/* Плашка заходит на подставку весов, чтобы весам досталось больше места. */
+#result { position: relative; margin-top: -24px; }
 #result.empty { visibility: hidden; }
 .tag rect { fill: var(--paper); stroke: currentColor; stroke-width: 1.5; }
 .tag text { fill: currentColor; font-size: 12px; font-weight: 700; }

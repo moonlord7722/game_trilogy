@@ -11,7 +11,8 @@
   const GOOD = 75, OK = 40;
   // Весы: наклон в градусах на единицу ln(положено / нужно), с упором.
   const TILT_PER_LN = 14, TILT_MAX = 22;
-  const PIVOT = { x: 180, y: 60 }, ARM = 115;
+  // PAN_SCALE — во сколько раз чаши с предметами крупнее, чем нарисованы в разметке.
+  const PIVOT = { x: 180, y: 30 }, ARM = 110, PAN_SCALE = 1.25;
   // Сколько последних эталонов не повторять в свободной игре.
   const RECENT_KEEP = 12, RECENT_KEY = 'glazomer-recent';
   const SAVE_KEY = 'glazomer-save';
@@ -762,8 +763,8 @@
     const rad = angle * Math.PI / 180;
     const dx = Math.cos(rad) * ARM, dy = Math.sin(rad) * ARM;
     el.beam.setAttribute('transform', `rotate(${angle} ${PIVOT.x} ${PIVOT.y})`);
-    el.left.setAttribute('transform', `translate(${PIVOT.x - dx} ${PIVOT.y - dy})`);
-    el.right.setAttribute('transform', `translate(${PIVOT.x + dx} ${PIVOT.y + dy})`);
+    el.left.setAttribute('transform', `translate(${PIVOT.x - dx} ${PIVOT.y - dy}) scale(${PAN_SCALE})`);
+    el.right.setAttribute('transform', `translate(${PIVOT.x + dx} ${PIVOT.y + dy}) scale(${PAN_SCALE})`);
     requestAnimationFrame(frame);
   }
 
