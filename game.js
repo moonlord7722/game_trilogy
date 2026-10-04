@@ -627,6 +627,30 @@
 
   // ---------- раскрытие ----------
 
+  const pick = (list) => list[Math.floor(Math.random() * list.length)];
+  // Строка вердикта должна помещаться в одну строку на телефоне.
+  const VERDICT_MAX = 24;
+
+  // Фраза о том, насколько игрок промахнулся: вблизи ответа — в предметах, вдали — в разах.
+  function verdictText({ f, score, need }, count, unit) {
+    if (count === need) return pick(['Точно!', 'В яблочко!', 'Глаз-алмаз!']);
+    const d = Math.abs(count - need);
+    const diff = d === 1 ? `1 ${unit.acc}` : `${num(d)} ${plural(d, unit.forms)}`;
+    const times = f > 1 ? `перебор в ${fmtTimes(f)}` : `недобор в ${fmtTimes(1 / f)}`;
+    const fit = (list, fallback) => {
+      const short = list.filter((s) => s.length <= VERDICT_MAX);
+      return short.length ? pick(short) : fallback;
+    };
+    if (score >= 90) {
+      return fit([`Почти! Мимо на ${diff}`, `Рядом! Мимо на ${diff}`, `Всего на ${diff} мимо`], 'Почти точно');
+    }
+    if (d <= 5 || score >= 60) {
+      return fit([`${f > 1 ? 'Перебор' : 'Недобор'} на ${diff}`, `Промах на ${diff}`], cap(times));
+    }
+    if (score < 30) return fit([`Ого! ${cap(times)}`, `Мимо! ${cap(times)}`], cap(times));
+    return cap(times);
+  }
+
   function release() {
     const r = rounds[idx], my = run;
     phase = 'swing';
@@ -650,11 +674,7 @@
 
     setTimeout(() => {
       if (my !== run) return;
-      el.verdict.textContent =
-        count === need ? `Точно! · +${score}`
-        : score >= 90 ? `Почти точно · +${score}`
-        : f > 1 ? `Перебор в ${fmtTimes(f)} · +${score}`
-        : `Недобор в ${fmtTimes(1 / f)} · +${score}`;
+      el.verdict.textContent = `${verdictText(res, count, r.u)} · +${score}`;
       el.fact.textContent = '';
       el.result.classList.remove('empty');
       el.total.textContent = total;
