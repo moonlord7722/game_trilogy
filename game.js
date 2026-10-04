@@ -628,27 +628,40 @@
   // ---------- раскрытие ----------
 
   const pick = (list) => list[Math.floor(Math.random() * list.length)];
-  // Строка вердикта должна помещаться в одну строку на телефоне.
+  // Фраза вердикта должна помещаться в одну строку на телефоне вместе с очками.
   const VERDICT_MAX = 24;
+  const PHRASES = {
+    exact: ['Точно!', 'Глаз-алмаз!', 'В яблочко!', 'Глаз как у орла!', 'Снайпер!', 'Как в аптеке!'],
+    near: ['Почти!', 'На волосок!', 'Чуть-чуть мимо!'],
+    close: ['Неплохо!', 'Глаз намётан!', 'Тепло!', 'Рядом, но мимо'],
+    over: ['Многовато!', 'Перебор!', 'Куда столько?', 'Полегче!', 'Притормози!'],
+    under: ['Маловато!', 'Слишком мало!', 'Жадничаешь!', 'Докладывай ещё!', 'Не скупись!'],
+    far: ['Ого! Мимо!', 'Пальцем в небо!', 'Весы в шоке!', 'Мимо кассы!', 'Глаз замылился!'],
+    farOver: ['Куда столько?!'],
+    farUnder: ['Это всё?'],
+  };
 
-  // Фраза о том, насколько игрок промахнулся: вблизи ответа — в предметах, вдали — в разах.
+  // Броская фраза о том, насколько близок ответ; цифры промаха идут отдельно, в missText.
   function verdictText({ f, score, need }, count, unit) {
-    if (count === need) return pick(['Точно!', 'В яблочко!', 'Глаз-алмаз!']);
-    const d = Math.abs(count - need);
-    const diff = d === 1 ? `1 ${unit.acc}` : `${num(d)} ${plural(d, unit.forms)}`;
-    const times = f > 1 ? `перебор в ${fmtTimes(f)}` : `недобор в ${fmtTimes(1 / f)}`;
-    const fit = (list, fallback) => {
-      const short = list.filter((s) => s.length <= VERDICT_MAX);
-      return short.length ? pick(short) : fallback;
-    };
+    if (count === need) return pick(PHRASES.exact);
+    const over = f > 1, d = Math.abs(count - need);
     if (score >= 90) {
-      return fit([`Почти! Мимо на ${diff}`, `Рядом! Мимо на ${diff}`, `Всего на ${diff} мимо`], 'Почти точно');
+      const few = unit.forms[2];
+      const pair = over ? `Пара ${few} лишняя!` : `Ещё бы пару ${few}!`;
+      return pick(d >= 2 && d <= 3 && pair.length <= VERDICT_MAX ? [...PHRASES.near, pair] : PHRASES.near);
     }
-    if (d <= 5 || score >= 60) {
-      return fit([`${f > 1 ? 'Перебор' : 'Недобор'} на ${diff}`, `Промах на ${diff}`], cap(times));
-    }
-    if (score < 30) return fit([`Ого! ${cap(times)}`, `Мимо! ${cap(times)}`], cap(times));
-    return cap(times);
+    if (score >= 70) return pick(PHRASES.close);
+    if (score >= 30) return pick(over ? PHRASES.over : PHRASES.under);
+    return pick([...PHRASES.far, ...(over ? PHRASES.farOver : PHRASES.farUnder)]);
+  }
+
+  // Промах цифрой: вблизи ответа — в предметах, вдали или с длинным названием — в разах.
+  function missText({ f, score, need }, count, unit) {
+    if (count === need) return '';
+    const over = f > 1, d = Math.abs(count - need), word = over ? 'Перебор' : 'Недобор';
+    const items = `${word} на ${d === 1 ? `1 ${unit.acc}` : `${num(d)} ${plural(d, unit.forms)}`}`;
+    return (d <= 5 || score >= 60) && items.length <= VERDICT_MAX ? items
+      : `${word} в ${fmtTimes(over ? f : 1 / f)}`;
   }
 
   function release() {
@@ -661,7 +674,8 @@
     el.lock.classList.add('open');
 
     const res = judge(r, count, idx);
-    const { f, score, need } = res;
+    const { score, need } = res;
+    const miss = missText(res, count, r.u);
     results.push(res);
     total += score;
     // Ответ сохраняется сразу, чтобы обновление страницы не давало переиграть раунд.
@@ -675,7 +689,8 @@
     setTimeout(() => {
       if (my !== run) return;
       el.verdict.textContent = `${verdictText(res, count, r.u)} · +${score}`;
-      el.fact.textContent = '';
+      // Вторая строка под правильный ответ занята заранее, чтобы плашка не прыгала.
+      el.fact.innerHTML = miss && `${miss}<br>&nbsp;`;
       el.result.classList.remove('empty');
       el.total.textContent = total;
     }, 1500);
@@ -694,7 +709,8 @@
         const e = 1 - Math.pow(1 - k, 3);
         show(Math.max(1, Math.round(Math.exp(Math.log(from) + (Math.log(need) - Math.log(from)) * e))));
         if (k < 1) return requestAnimationFrame(tick);
-        el.fact.innerHTML = `Нужно <b>≈ ${num(need)} ${plural(need, r.u.forms)}</b>`
+        const truth = `≈ ${num(need)} ${plural(need, r.u.forms)}`;
+        el.fact.innerHTML = `${miss ? miss + '<br>' : ''}Нужно <b>${truth}</b>`
           + (isTutorial ? `<br>Чем ближе, тем больше очков: до 100 за раунд, в партии ${ROUNDS} раундов.` : '');
         el.main.textContent = isTutorial ? 'Играть' : idx + 1 < ROUNDS ? 'Дальше' : 'Итоги';
         el.main.disabled = false;
