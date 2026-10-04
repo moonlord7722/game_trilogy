@@ -38,7 +38,7 @@ const Platform = (() => {
     if (!got) return null;
     ysdk = got.sdk;
     player = got.p;
-    const lang = ysdk.environment?.i18n?.lang;
+    const lang = ysdk.environment.i18n.lang;
     document.documentElement.lang = LANGS.includes(lang) ? lang : LANGS[0];
     ysdk.on('game_api_pause', () => { paused = true; });
     ysdk.on('game_api_resume', () => { paused = false; });
