@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <title>Глазомер — вес</title>
+  <title>Глазомер</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -16,6 +16,7 @@
     <h1 id="question"></h1>
 
     <svg id="stage" viewBox="0 -12 360 240" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+      <g id="scale-stage">
       <path class="ink" d="M180 30V215M140 215H220"/>
       <g id="left-pan">
         <path class="rope" d="M0 0L-45 95M0 0L45 95"/>
@@ -34,6 +35,15 @@
       <g id="lock">
         <rect x="170" y="32" width="20" height="16" rx="3"/>
         <path d="M174 32V27a6 6 0 0 1 12 0v5"/>
+      </g>
+      </g>
+      <g id="size-stage">
+        <path class="ink" d="M8 200H352"/>
+        <g id="s-ref" class="art ref"></g>
+        <g id="s-ghost" class="art guess"></g>
+        <g id="s-guess" class="art guess"></g>
+        <g id="s-ref-tag" class="tag ref"><rect x="30" y="205" width="124" height="20" rx="5"/><text x="92" y="219" text-anchor="middle"></text></g>
+        <g id="s-guess-tag" class="tag true"><rect x="206" y="205" width="124" height="20" rx="5"/><text x="268" y="219" text-anchor="middle"></text></g>
       </g>
     </svg>
 
@@ -64,10 +74,11 @@
 
   <section id="start" class="overlay">
     <div class="card">
-      <div class="brand">Глазомер <span>· вес</span></div>
-      <p class="lead">Сколько одного весит другое? Прикинь на глаз и отпусти весы.</p>
+      <div class="brand">Глазомер <span class="mode-name">· вес</span></div>
+      <div id="modes" class="seg"></div>
+      <p class="lead" id="lead"></p>
       <p id="streak"></p>
-      <div id="levels"></div>
+      <div id="levels" class="seg"></div>
       <p id="level-note"></p>
       <div id="plays">
         <button id="play-daily" type="button"></button>
@@ -88,7 +99,7 @@
 
   <section id="summary" class="overlay" hidden>
     <div class="card">
-      <div class="brand">Глазомер <span>· вес</span></div>
+      <div class="brand">Глазомер <span class="mode-name">· вес</span></div>
       <div id="sum-total"></div>
       <p id="sum-meta"></p>
       <div id="sum-squares"></div>
@@ -111,6 +122,8 @@
   <script src="platform.js"></script>
   <script src="data.js"></script>
   <script src="data2.js"></script>
+  <script src="data3.js"></script>
+  <script src="sizes.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

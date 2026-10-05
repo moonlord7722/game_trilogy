@@ -3,11 +3,31 @@
   // min/max — границы правильного ответа, zeroAt — во сколько раз надо промахнуться для 0 очков,
   // slider — предел ползунка, showRef — подсказывать вес эталона до ответа,
   // need — сколько предметов должно быть в коллекции, чтобы уровень открылся.
-  const LEVELS = [
+  const WEIGHT_LEVELS = [
     { id: 'easy', title: 'Лёгкий', hint: 'Вес синего предмета подсказан', min: 3, max: 40, zeroAt: 8, slider: 150, showRef: true, need: 0 },
     { id: 'mid', title: 'Средний', hint: 'Без подсказок', min: 3, max: 150, zeroAt: 8, slider: 500, showRef: false, need: 40 },
     { id: 'hard', title: 'Сложный', hint: 'Большие числа, строгие очки', min: 10, max: 1000, zeroAt: 3, slider: 3000, showRef: false, need: 80 },
   ];
+  // Режим «Размер»: min/max — во сколько раз предметы пары отличаются по размеру,
+  // span — во сколько раз ползунок уводит оранжевый предмет в каждую сторону от размера синего.
+  const SIZE_LEVELS = [
+    { id: 'easy', title: 'Лёгкий', hint: 'Размеры подписаны', min: 1.2, max: 4, zeroAt: 3, span: 8, showRef: true, need: 0 },
+    { id: 'mid', title: 'Средний', hint: 'Без подсказок', min: 1.2, max: 8, zeroAt: 2.5, span: 16, showRef: false, need: 40 },
+    { id: 'hard', title: 'Сложный', hint: 'Большая разница, строгие очки', min: 3, max: 12, zeroAt: 2, span: 25, showRef: false, need: 80 },
+  ];
+  const MODES = {
+    weight: {
+      title: 'Вес', levels: WEIGHT_LEVELS, go: 'Отпустить весы', hint: 'Вес',
+      lead: 'Сколько одного весит другое? Прикинь на глаз и отпусти весы.',
+    },
+    size: {
+      title: 'Размер', levels: SIZE_LEVELS, go: 'Замерить', hint: 'Размер',
+      lead: 'Какого размера одно рядом с другим? Растяни силуэт на глаз и замерь.',
+    },
+  };
+  // Ответ в «Размере» засчитывается как точный, если промах меньше этой доли.
+  const SIZE_EXACT = 1.03;
+  const BY = { h: 'в высоту', w: 'в длину', d: 'в поперечнике' };
   const GOOD = 75, OK = 40;
   // Весы: наклон в градусах на единицу ln(положено / нужно), с упором.
   const TILT_PER_LN = 14, TILT_MAX = 22;
@@ -28,13 +48,15 @@
   // В первый визит игрока её нет.
   const AD_EVERY = 2;
   // Подсказка «диапазон» оставляет ответы, отличающиеся не больше чем в RANGE_HINT раз.
-  const RANGE_HINT = 4;
+  const RANGE_HINT = 4, SIZE_RANGE_HINT = 2.5;
   const TUTORIAL = ['человек', 'кот'];
 
   const $ = (id) => document.getElementById(id);
   const el = {
     level: $('level'), round: $('round'), total: $('total'), question: $('question'),
     beam: $('beam'), left: $('left-pan'), right: $('right-pan'),
+    app: $('app'), modes: $('modes'), lead: $('lead'), modeNames: [...document.querySelectorAll('.mode-name')],
+    sRef: $('s-ref'), sGuess: $('s-guess'), sGhost: $('s-ghost'), sRefTag: $('s-ref-tag'), sGuessTag: $('s-guess-tag'),
     ref: $('ref'), pile: $('pile'), lock: $('lock'), refTag: $('ref-tag'), unitTag: $('unit-tag'),
     result: $('result'), verdict: $('verdict'), fact: $('fact'),
     controls: $('controls'), count: $('count'), slider: $('slider'),
@@ -50,6 +72,7 @@
     albumNext: $('album-next'), albumGrid: $('album-grid'), albumBack: $('album-back'),
   };
 
+  let mode = 'weight', LEVELS = WEIGHT_LEVELS;
   let level = LEVELS[0];
   let isDaily = false, isTutorial = false, coachStep = 0;
   let rounds = [], idx = 0, total = 0, results = [];
@@ -105,10 +128,31 @@
     return num(r) + ' ' + plural(r, ['раз', 'раза', 'раз']);
   }
 
+  // Размеры тоже приблизительные: метры, сантиметры, а мелочь — с десятыми сантиметра.
+  function fmtM(m) {
+    if (m >= 10) return '≈ ' + num(Math.round(m)) + ' м';
+    if (m >= 1) return '≈ ' + num(Math.round(m * 10) / 10) + ' м';
+    if (m >= 0.1) return '≈ ' + num(Math.round(m * 100)) + ' см';
+    return '≈ ' + num(Math.round(m * 1000) / 10) + ' см';
+  }
+
+  const ALL = OBJECTS.concat(EXTRA);
+  // size: by — мера (высота, длина, диаметр), m — метры, ext — протяжённость силуэта по этой мере.
+  ALL.forEach((o) => {
+    const s = SIZES[o.name];
+    if (s) o.size = { by: s[0], m: s[1], ext: s[2] };
+  });
+  // Величина предмета в текущем режиме; предметы без неё в режиме не участвуют.
+  const val = (o) => (mode === 'size' ? o.size && o.size.m : o.kg);
+  const fmtVal = (o) => (mode === 'size' ? fmtM(o.size.m) : fmtKg(o.kg));
+  const usable = (list) => list.filter(val);
+  // Ячейка сохранения для партии дня и рекорда: у веса — как было до появления режимов.
+  const slot = () => (mode === 'weight' ? level.id : `${mode}-${level.id}`);
+
   const cap = (s) => s.replace(/^«?./, (m) => m.toUpperCase());
-  const byName = (name) => OBJECTS.find((o) => o.name === name);
+  const byName = (name) => ALL.find((o) => o.name === name);
   const figure = (o) =>
-    `<figure><svg viewBox="-4 -4 108 108"><g class="art ref">${o.art}</g></svg><figcaption>${o.name}<small>${fmtKg(o.kg)}</small></figcaption></figure>`;
+    `<figure><svg viewBox="-4 -4 108 108"><g class="art ref">${o.art}</g></svg><figcaption>${o.name}<small>${val(o) ? fmtVal(o) : o.kg ? fmtKg(o.kg) : fmtM(o.size.m)}</small></figcaption></figure>`;
 
   function loadRecent() {
     try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; } catch { return []; }
@@ -174,7 +218,7 @@
       const j = Math.floor(rng() * (i + 1));
       [rest[i], rest[j]] = [rest[j], rest[i]];
     }
-    return STARTERS.map(byName).concat(rest);
+    return STARTERS.map(byName).concat(rest, EXTRA);
   })();
 
   const collection = () => ORDER.slice(0, save.owned);
@@ -224,8 +268,10 @@
     for (let guard = 0; out.length < n && guard < 4000; guard++) {
       const h = pool[Math.floor(rng() * pool.length)];
       const u = pool[Math.floor(rng() * pool.length)];
-      const ratio = h.kg / u.kg;
-      if (used.has(h) || used.has(u) || ratio < level.min || ratio > level.max) continue;
+      // В весе ответ — сколько штук, в размере — во сколько раз оранжевый предмет больше синего.
+      const ratio = mode === 'size' ? u.size.m / h.size.m : h.kg / u.kg;
+      const gap = mode === 'size' ? Math.max(ratio, 1 / ratio) : ratio;
+      if (used.has(h) || used.has(u) || gap < level.min || gap > level.max) continue;
       // Недавние эталоны пропускаем, пока есть из чего выбирать.
       if (guard < 2000 && avoid.has(h.name)) continue;
       used.add(h); used.add(u);
@@ -236,11 +282,16 @@
 
   function dailySeed() {
     const d = new Date();
-    return (d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()) * 10 + LEVELS.indexOf(level);
+    return (d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()) * 10 + LEVELS.indexOf(level) + (mode === 'size' ? 5 : 0);
   }
 
   function judge(r, guess, i) {
     const f = guess / r.ratio;
+    if (mode === 'size') {
+      const off = Math.abs(Math.log(f));
+      const score = off < Math.log(SIZE_EXACT) ? 100 : Math.round(100 * Math.max(0, 1 - off / Math.log(level.zeroAt)));
+      return { r, guess, f, score, need: r.ratio, hinted: Boolean(hintLog[i]), swapped: i === swapAt };
+    }
     const need = Math.max(1, Math.round(r.ratio));
     // Ответ считается в целых штуках, поэтому попадание в него — это полные 100 очков.
     const score = guess === need ? 100
@@ -254,25 +305,27 @@
   // за видео: он заменяется запасным, тоже одинаковым у всех.
   function startGame(asDaily) {
     const daily = dailyToday();
-    const entry = daily[level.id];
+    const key = slot();
+    const entry = daily[key];
     isDaily = asDaily;
     isTutorial = false;
     run++;
     save.level = level.id;
+    save.mode = mode;
     spare = null; swapAt = null; finished = false;
     if (isDaily) {
-      rounds = makeRounds(mulberry32(dailySeed()), new Set(), OBJECTS, ROUNDS + 1);
+      rounds = makeRounds(mulberry32(dailySeed()), new Set(), usable(ALL), ROUNDS + 1);
       if (rounds.length > ROUNDS) spare = rounds.pop();
-      if (!entry) daily[level.id] = { done: false, total: 0, guesses: [], hints: {} };
-      hintLog = daily[level.id].hints || (daily[level.id].hints = {});
-      if (spare && daily[level.id].swap != null) {
-        swapAt = daily[level.id].swap;
+      if (!entry) daily[key] = { done: false, total: 0, guesses: [], hints: {} };
+      hintLog = daily[key].hints || (daily[key].hints = {});
+      if (spare && daily[key].swap != null) {
+        swapAt = daily[key].swap;
         rounds[swapAt] = spare;
       }
-      results = daily[level.id].guesses.slice(0, ROUNDS).map((g, i) => judge(rounds[i], g, i));
+      results = daily[key].guesses.slice(0, ROUNDS).map((g, i) => judge(rounds[i], g, i));
       storeSave();
     } else {
-      rounds = makeRounds(mulberry32(Math.floor(Math.random() * 1e9)), new Set(loadRecent()), collection());
+      rounds = makeRounds(mulberry32(Math.floor(Math.random() * 1e9)), new Set(loadRecent()), usable(collection()));
       hintLog = {};
       results = [];
     }
@@ -300,6 +353,7 @@
   // Обучение — один раунд на лёгком уровне без записи в сохранение.
   function startTutorial() {
     const [h, u] = TUTORIAL.map(byName);
+    setMode('weight');
     level = LEVELS[0];
     isDaily = false;
     isTutorial = true;
@@ -367,10 +421,13 @@
     Platform.play(true);
     angle = 0; vel = 0;
     lo = 1; hi = level.slider;
+    if (mode === 'size') { lo = 1 / level.span; hi = level.span; }
     el.round.textContent = isTutorial ? '' : `${idx + 1} / ${ROUNDS}`;
     el.total.textContent = total;
-    el.question.innerHTML =
-      `Сколько <span class="guess">${r.u.forms[2]}</span> уравновесят <span class="ref">${r.h.acc}</span>?`;
+    el.question.innerHTML = mode === 'size'
+      ? `<span class="ref">${cap(r.h.forms[0])}</span> в масштабе. Какого размера <span class="guess">${r.u.forms[0]}</span>?`
+      : `Сколько <span class="guess">${r.u.forms[2]}</span> уравновесят <span class="ref">${r.h.acc}</span>?`;
+    if (mode === 'size') setScene(r);
     el.ref.innerHTML = r.h.art;
     el.refTag.lastElementChild.textContent = fmtKg(r.h.kg);
     el.refTag.classList.toggle('off', !level.showRef);
@@ -384,12 +441,15 @@
     el.verdict.textContent = '';
     el.fact.textContent = '';
     el.controls.classList.remove('off');
-    el.main.textContent = 'Отпустить весы';
+    el.main.textContent = MODES[mode].go;
     el.main.disabled = false;
     coachStep = 0;
     setCount(1);
     if (hintLog[idx]) applyHint(hintLog[idx]);
     refreshHints();
+    if (mode === 'size' && !save.sizeTip && !hintLog[idx]) {
+      note('Синий предмет в масштабе. Ползунком подгони оранжевый до настоящего размера и замерь.');
+    }
     if (isTutorial) {
       coachStep = 1;
       note(`На левой чаше ${r.h.forms[0]}. Набери ползунком или кнопками, сколько ${r.u.forms[2]} нужно на правую для равновесия.`);
@@ -408,26 +468,37 @@
 
   // «Зал» сравнивает предмет на оранжевой чаше с третьим, по возможности из коллекции.
   function hallHint(r) {
-    for (const pool of [collection(), OBJECTS]) {
+    for (const pool of [collection(), ALL]) {
       let best = null;
-      pool.forEach((t) => {
+      usable(pool).forEach((t) => {
         if (t === r.h || t === r.u) return;
-        const [a, b] = t.kg > r.u.kg ? [t, r.u] : [r.u, t];
-        const x = a.kg / b.kg, n = Math.round(x);
+        const [a, b] = val(t) > val(r.u) ? [t, r.u] : [r.u, t];
+        const x = val(a) / val(b), n = Math.round(x);
         if (n < 2 || n > 20) return;
         const err = Math.abs(x - n) / x;
         if (!best || err < best.err) best = { a, b, n, err };
       });
-      if (best) return `Зал считает: ${best.a.forms[0]} весит как ≈ ${best.n} ${plural(best.n, best.b.forms)}`;
+      const as = mode === 'size' ? 'по размеру как' : 'весит как';
+      if (best) return `Зал считает: ${best.a.forms[0]} ${as} ≈ ${best.n} ${plural(best.n, best.b.forms)}`;
     }
     return '';
   }
 
   function applyHint(type) {
     const r = rounds[idx];
-    if (type === 'weight') {
+    if (type === 'weight' && mode === 'size') {
+      el.sRefTag.classList.remove('off');
+      note(`${cap(r.h.forms[0])} — ${fmtM(r.h.size.m)} ${BY[r.h.size.by]}`);
+      show(count);
+    } else if (type === 'weight') {
       el.refTag.classList.remove('off');
       note(`${cap(r.h.forms[0])} весит ${fmtKg(r.h.kg)}`);
+    } else if (type === 'range' && mode === 'size') {
+      const p = mulberry32(Math.round(r.ratio * 1000) + idx)();
+      lo = Math.max(1 / level.span, r.ratio / Math.pow(SIZE_RANGE_HINT, p));
+      hi = Math.min(level.span, lo * SIZE_RANGE_HINT);
+      note(`Ответ — от ${fmtM(lo * r.u.size.m / r.ratio)} до ${fmtM(hi * r.u.size.m / r.ratio)}`.replace(/≈ /g, ''));
+      setCount(count);
     } else if (type === 'range') {
       // Положение ответа внутри диапазона зависит только от раунда: перезагрузка его не меняет.
       const need = Math.max(1, Math.round(r.ratio));
@@ -450,6 +521,7 @@
     el.hintCount.hidden = offer;
     el.hintAd.hidden = !offer;
     el.hintBtns.forEach((b) => {
+      if (b.dataset.hint === 'weight') b.textContent = MODES[mode].hint;
       b.hidden = b.dataset.hint === 'weight' && level.showRef;
       b.disabled = Boolean(taken) || save.hints < 1;
       b.classList.toggle('on', taken === b.dataset.hint);
@@ -474,7 +546,7 @@
     if (phase !== 'done' || !canSwap()) return;
     const my = run;
     if (!await Platform.rewarded() || my !== run) return;
-    const entry = dailyToday()[level.id];
+    const entry = dailyToday()[slot()];
     swapAt = entry.swap = idx;
     entry.guesses.pop();
     delete hintLog[idx];
@@ -495,12 +567,16 @@
 
   // ---------- ввод ----------
 
-  const sliderToCount = (v) => Math.round(Math.exp(Math.log(lo) + v / 1000 * Math.log(hi / lo)));
+  const sliderToCount = (v) => {
+    const c = Math.exp(Math.log(lo) + v / 1000 * Math.log(hi / lo));
+    return mode === 'size' ? c : Math.round(c);
+  };
   const countToSlider = (c) => Math.round(Math.log(c / lo) / Math.log(hi / lo) * 1000);
 
   function setCount(c, fromSlider) {
     const prev = count;
-    count = Math.max(lo, Math.min(hi, Math.round(c)));
+    // В размере ответ — дробное отношение, три знака хватает с запасом.
+    count = Math.max(lo, Math.min(hi, mode === 'size' ? Math.round(c * 1000) / 1000 : Math.round(c)));
     if (!fromSlider) el.slider.value = countToSlider(count);
     show(count);
     if (coachStep === 1 && count !== prev) {
@@ -514,6 +590,12 @@
   function show(c) {
     shown = c;
     const r = rounds[idx];
+    if (mode === 'size') {
+      // Число видно, только когда размер синего предмета известен или раунд раскрыт.
+      const open = level.showRef || hintLog[idx] === 'weight' || phase === 'truth' || phase === 'done';
+      el.count.innerHTML = open ? `<b>${fmtM(c * r.u.size.m / r.ratio)}</b>${BY[r.u.size.by]}` : `<b>?</b>${r.u.forms[0]}`;
+      return drawScene(c);
+    }
     el.count.innerHTML = `<b>× ${num(c)}</b>${plural(c, r.u.forms)}`;
     drawPile(c, r.u);
   }
@@ -524,7 +606,8 @@
     const step = () => {
       ticks++;
       const s = ticks < 8 ? 1 : Math.max(1, Math.round(count * 0.06));
-      setCount(count + dir * s);
+      if (mode === 'size') setCount(count * Math.pow(ticks < 8 ? 1.02 : 1.05, dir));
+      else setCount(count + dir * s);
       timer = setTimeout(step, ticks < 8 ? 140 : 70);
     };
     const stop = () => { clearTimeout(timer); ticks = 0; };
@@ -566,7 +649,7 @@
       const i = r.score >= GOOD ? 0 : r.score >= OK ? 1 : 2;
       return (r.hinted || r.swapped ? ['🟢', '🟡', '🔴'] : ['🟩', '🟨', '🟥'])[i];
     }).join('');
-    const text = `Глазомер · вес · ${level.title.toLowerCase()} — ${total} из ${ROUNDS * 100}\n${squares}`;
+    const text = `Глазомер · ${MODES[mode].title.toLowerCase()} · ${level.title.toLowerCase()} — ${total} из ${ROUNDS * 100}\n${squares}`;
     try {
       await navigator.clipboard.writeText(text);
       el.share.textContent = 'Скопировано';
@@ -582,6 +665,16 @@
       n ? `Серия: ${n} ${plural(n, ['день', 'дня', 'дней'])} подряд` : '',
       `Подсказок: ${save.hints}`,
     ].filter(Boolean).join(' · ');
+    el.lead.textContent = MODES[mode].lead;
+    el.modes.textContent = '';
+    Object.keys(MODES).forEach((m) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = MODES[m].title;
+      b.className = m === mode ? 'on' : '';
+      b.addEventListener('click', () => { setMode(m); showStart(); });
+      el.modes.appendChild(b);
+    });
     el.levels.textContent = '';
     LEVELS.forEach((lv) => {
       const b = document.createElement('button');
@@ -591,8 +684,8 @@
       b.addEventListener('click', () => { level = lv; showStart(); });
       el.levels.appendChild(b);
     });
-    const open = unlocked(level), entry = daily[level.id];
-    const best = save.best[level.id] ? ` · рекорд ${save.best[level.id]}` : '';
+    const open = unlocked(level), entry = daily[slot()];
+    const best = save.best[slot()] ? ` · рекорд ${save.best[slot()]}` : '';
     el.levelNote.textContent = open ? level.hint + best
       : `Откроется при ${level.need} предметах в коллекции, сейчас ${save.owned}`;
     // Свободная игра открывается на весь день после любой доигранной партии дня.
@@ -612,10 +705,10 @@
   // Записывает итог доигранной партии: рекорд уровня, партию дня, серию дней и награды.
   function finishGame() {
     finished = true;
-    newBest = total > (save.best[level.id] || 0);
-    if (newBest) save.best[level.id] = total;
+    newBest = total > (save.best[slot()] || 0);
+    if (newBest) save.best[slot()] = total;
     if (isDaily) {
-      const entry = dailyToday()[level.id];
+      const entry = dailyToday()[slot()];
       entry.done = true;
       entry.total = total;
       if (save.streak.last !== dayKey()) save.streak = { count: streakNow() + 1, last: dayKey() };
@@ -641,8 +734,35 @@
     farUnder: ['Это всё?'],
   };
 
+  // В «Размере» вместо фраз про весы и штуки — свои.
+  const SIZE_PHRASES = {
+    ...PHRASES,
+    over: ['Великовато!', 'Перебор!', 'Раздуто!', 'Полегче!', 'Притормози!'],
+    under: ['Маловато!', 'Мелковато!', 'Расти ещё!', 'Не скупись!'],
+    far: ['Ого! Мимо!', 'Пальцем в небо!', 'Линейка в шоке!', 'Мимо кассы!', 'Глаз замылился!'],
+    farOver: ['Куда такой?!'],
+  };
+
+  function sizeVerdict({ f, score }) {
+    const over = f > 1, P = SIZE_PHRASES;
+    if (score === 100) return pick(P.exact);
+    if (score >= 90) return pick(P.near);
+    if (score >= 70) return pick(P.close);
+    if (score >= 30) return pick(over ? P.over : P.under);
+    return pick([...P.far, ...(over ? P.farOver : P.farUnder)]);
+  }
+
+  // Промах в «Размере»: вблизи ответа — в процентах, вдали — в разах.
+  function sizeMiss({ f, score }) {
+    if (score === 100) return '';
+    const over = f > 1, x = over ? f : 1 / f;
+    if (x < 1.5) return `${over ? 'Больше' : 'Меньше'} на ${Math.max(1, Math.round((over ? f - 1 : 1 - f) * 100))} %`;
+    return `${over ? 'Больше' : 'Меньше'} в ${fmtTimes(x)}`;
+  }
+
   // Броская фраза о том, насколько близок ответ; цифры промаха идут отдельно, в missText.
   function verdictText({ f, score, need }, count, unit) {
+    if (mode === 'size') return sizeVerdict({ f, score });
     if (count === need) return pick(PHRASES.exact);
     const over = f > 1, d = Math.abs(count - need);
     if (score >= 90) {
@@ -657,6 +777,7 @@
 
   // Промах цифрой: вблизи ответа — в предметах, вдали или с длинным названием — в разах.
   function missText({ f, score, need }, count, unit) {
+    if (mode === 'size') return sizeMiss({ f, score });
     if (count === need) return '';
     const over = f > 1, d = Math.abs(count - need), word = over ? 'Перебор' : 'Недобор';
     const items = `${word} на ${d === 1 ? `1 ${unit.acc}` : `${num(d)} ${plural(d, unit.forms)}`}`;
@@ -680,9 +801,15 @@
     total += score;
     // Ответ сохраняется сразу, чтобы обновление страницы не давало переиграть раунд.
     if (isDaily) {
-      dailyToday()[level.id].guesses.push(count);
+      dailyToday()[slot()].guesses.push(count);
       storeSave();
     }
+    if (mode === 'size' && !save.sizeTip) {
+      save.sizeTip = true;
+      storeSave();
+    }
+    // В «Размере» качаться нечему, поэтому раскрытие идёт быстрее.
+    const [tVerdict, tTruth] = mode === 'size' ? [400, 1500] : [1500, 2700];
     // Пока последний раунд можно переиграть, итог партии записывается при выходе из раунда.
     if (results.length === ROUNDS && !canSwap()) finishGame();
 
@@ -693,7 +820,7 @@
       el.fact.innerHTML = miss && `${miss}<br>&nbsp;`;
       el.result.classList.remove('empty');
       el.total.textContent = total;
-    }, 1500);
+    }, tVerdict);
 
     setTimeout(() => {
       if (my !== run) return;
@@ -702,15 +829,26 @@
       el.count.classList.add('true');
       el.refTag.classList.remove('off');
       el.unitTag.classList.remove('off');
+      if (mode === 'size') {
+        // Ответ игрока остаётся бледной тенью, поверх неё зелёный силуэт идёт к настоящему размеру.
+        ghost = count;
+        el.sGuess.setAttribute('class', 'art true');
+        el.sGhost.innerHTML = r.u.art;
+        el.sRefTag.classList.remove('off');
+        el.sGuessTag.classList.remove('off');
+      }
       const from = count, t0 = performance.now(), dur = 900;
       const tick = (t) => {
         if (my !== run) return;
         const k = Math.min(1, (t - t0) / dur);
         const e = 1 - Math.pow(1 - k, 3);
-        show(Math.max(1, Math.round(Math.exp(Math.log(from) + (Math.log(need) - Math.log(from)) * e))));
+        const at = Math.exp(Math.log(from) + (Math.log(need) - Math.log(from)) * e);
+        show(mode === 'size' ? at : Math.max(1, Math.round(at)));
         if (k < 1) return requestAnimationFrame(tick);
-        const truth = `≈ ${num(need)} ${plural(need, r.u.forms)}`;
-        el.fact.innerHTML = `${miss ? miss + '<br>' : ''}Нужно <b>${truth}</b>`
+        const truth = mode === 'size'
+          ? `${cap(r.u.forms[0])} — <b>${fmtM(r.u.size.m)}</b> ${BY[r.u.size.by]}`
+          : `Нужно <b>≈ ${num(need)} ${plural(need, r.u.forms)}</b>`;
+        el.fact.innerHTML = `${miss ? miss + '<br>' : ''}${truth}`
           + (isTutorial ? `<br>Чем ближе, тем больше очков: до 100 за раунд, в партии ${ROUNDS} раундов.` : '');
         el.main.textContent = isTutorial ? 'Играть' : idx + 1 < ROUNDS ? 'Дальше' : 'Итоги';
         el.main.disabled = false;
@@ -718,7 +856,7 @@
         phase = 'done';
       };
       requestAnimationFrame(tick);
-    }, 2700);
+    }, tTruth);
   }
 
   function next() {
@@ -736,13 +874,14 @@
     const n = streakNow();
     el.sumMeta.textContent = [
       isDaily ? 'Партия дня' : 'Свободная игра',
-      newBest ? 'новый рекорд' : `рекорд ${save.best[level.id]}`,
+      newBest ? 'новый рекорд' : `рекорд ${save.best[slot()]}`,
       n ? `серия ${n} ${plural(n, ['день', 'дня', 'дней'])}` : '',
     ].filter(Boolean).join(' · ');
     el.sumSquares.innerHTML = results
       .map((x) => `<i class="${x.score >= GOOD ? 's-good' : x.score >= OK ? 's-mid' : 's-bad'}${x.hinted || x.swapped ? ' hinted' : ''}"></i>`).join('');
     el.sumList.innerHTML = results
-      .map((x) => `<li><span>${cap(x.r.h.forms[0])} ≈ ${num(x.need)} ${plural(x.need, x.r.u.forms)}</span><span>+${x.score}</span></li>`)
+      .map((x) => `<li><span>${mode === 'size' ? `${cap(x.r.u.forms[0])} ${fmtM(x.r.u.size.m)}`
+        : `${cap(x.r.h.forms[0])} ≈ ${num(x.need)} ${plural(x.need, x.r.u.forms)}`}</span><span>+${x.score}</span></li>`)
       .join('');
     const notes = [
       gained.level ? `Открыт уровень «${gained.level.title}»` : '',
@@ -783,6 +922,57 @@
     el.pile.innerHTML = svg;
   }
 
+  // ---------- сцена «Размера» ----------
+
+  // GROUND — линия земли, FIT — место под оба силуэта, REF_BOX — размер синего, пока оранжевый помещается рядом.
+  const GROUND = 200, FIT_W = 340, FIT_H = 200, SCENE_GAP = 16, REF_BOX = 110;
+  // boxes — рамки синего и оранжевого силуэтов в их собственных единицах,
+  // ghost — ответ игрока, оставленный тенью при раскрытии.
+  let boxes = null, ghost = null;
+
+  function setScene(r) {
+    ghost = null;
+    el.sRef.innerHTML = r.h.art;
+    el.sGuess.innerHTML = r.u.art;
+    el.sGhost.innerHTML = '';
+    boxes = [el.sRef.getBBox(), el.sGuess.getBBox()];
+    el.sGuess.setAttribute('class', 'art guess');
+    el.sRefTag.lastElementChild.textContent = `${fmtM(r.h.size.m)} ${BY[r.h.size.by]}`;
+    el.sGuessTag.lastElementChild.textContent = `${fmtM(r.u.size.m)} ${BY[r.u.size.by]}`;
+    el.sRefTag.classList.toggle('off', !level.showRef);
+    el.sGuessTag.classList.add('off');
+  }
+
+  // Ставит силуэт на землю: scale — единиц сцены на единицу рисунка, x — левый край.
+  function stand(g, b, scale, x) {
+    g.setAttribute('transform', `translate(${x - b.x * scale} ${GROUND - (b.y + b.height) * scale}) scale(${scale})`);
+  }
+
+  // q — во сколько раз оранжевый предмет больше синего, каждый по своей мере.
+  // Синий держит размер, пока оба помещаются; дальше сцена отъезжает.
+  function drawScene(q) {
+    const { h, u } = rounds[idx], [rb, ub] = boxes;
+    const kr = h.size.m / h.size.ext;
+    const ku = (x) => x * h.size.m / u.size.ext;
+    const wr = rb.width * kr, hr = rb.height * kr;
+    const widest = ku(Math.max(q, ghost || 0));
+    const wMax = ub.width * widest, hMax = ub.height * widest;
+    const p = Math.min(REF_BOX / Math.max(wr, hr), (FIT_W - SCENE_GAP) / (wr + wMax), FIT_H / Math.max(hr, hMax));
+    const x0 = 180 - (wr * p + SCENE_GAP + wMax * p) / 2;
+    const mid = x0 + wr * p + SCENE_GAP + wMax * p / 2;
+    stand(el.sRef, rb, kr * p, x0);
+    stand(el.sGuess, ub, ku(q) * p, mid - ub.width * ku(q) * p / 2);
+    if (ghost) stand(el.sGhost, ub, ku(ghost) * p, mid - ub.width * ku(ghost) * p / 2);
+  }
+
+  function setMode(m) {
+    mode = m;
+    LEVELS = MODES[m].levels;
+    level = LEVELS.find((lv) => lv.id === level.id) || LEVELS[0];
+    el.app.className = m;
+    el.modeNames.forEach((n) => { n.textContent = '· ' + MODES[m].title.toLowerCase(); });
+  }
+
   function frame(t) {
     // Пока площадка держит игру на паузе (реклама, свёрнутая вкладка), весы стоят.
     const dt = Platform.paused ? 0 : Math.min(0.033, (t - lastT) / 1000 || 0);
@@ -811,6 +1001,7 @@
       Object.assign(save, cloud);
       storeLocal();
     }
+    setMode(MODES[save.mode] ? save.mode : 'weight');
     level = LEVELS.find((lv) => lv.id === save.level && unlocked(lv)) || LEVELS[0];
     newcomer = !save.tutorial;
     adDue = !newcomer;

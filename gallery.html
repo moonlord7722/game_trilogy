@@ -15,8 +15,9 @@
   <div id="grid"></div>
   <script src="data.js"></script>
   <script src="data2.js"></script>
+  <script src="data3.js"></script>
   <script>
-    document.getElementById('grid').innerHTML = OBJECTS.map((o, i) =>
+    document.getElementById('grid').innerHTML = OBJECTS.concat(EXTRA).map((o, i) =>
       `<div><svg viewBox="-4 -4 108 108"><g class="art ${i % 2 ? 'guess' : 'ref'}">${o.art}</g></svg>${i + 1}. ${o.name}</div>`).join('');
   </script>
 </body>
