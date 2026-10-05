@@ -52,6 +52,10 @@
   const AD_EVERY = 2;
   // Подсказка «диапазон» оставляет ответы, отличающиеся не больше чем в RANGE_HINT раз.
   const RANGE_HINT = 4, SIZE_RANGE_HINT = 2.5;
+  // Сверхтяжёлое (башни, пирамида, «Титаник») в «Весе» сравнивается только между собой:
+  // тысячи слонов на чаше уже ничего не говорят глазу.
+  const HEAVY_KG = 1e6;
+  const heavy = (o) => o.kg >= HEAVY_KG;
   const TUTORIAL = ['человек', 'кот'];
 
   const $ = (id) => document.getElementById(id);
@@ -280,6 +284,7 @@
       const ratio = mode === 'size' ? u.size.m / h.size.m : h.kg / u.kg;
       const gap = mode === 'size' ? Math.max(ratio, 1 / ratio) : ratio;
       if (used.has(h) || used.has(u) || gap < level.min || gap > level.max) continue;
+      if (mode === 'weight' && heavy(h) !== heavy(u)) continue;
       // Недавние эталоны пропускаем, пока есть из чего выбирать.
       if (guard < 2000 && avoid.has(h.name)) continue;
       // В свободной игре удивительных предметов может ещё не быть в коллекции: тогда пары идут обычные.
@@ -490,6 +495,7 @@
       let best = null;
       usable(pool).forEach((t) => {
         if (t === r.h || t === r.u) return;
+        if (mode === 'weight' && heavy(t) !== heavy(r.u)) return;
         const [a, b] = val(t) > val(r.u) ? [t, r.u] : [r.u, t];
         const x = val(a) / val(b), n = Math.round(x);
         if (n < 2 || n > 20) return;
