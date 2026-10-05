@@ -56,6 +56,9 @@
   // тысячи слонов на чаше уже ничего не говорят глазу.
   const HEAVY_KG = 1e6;
   const heavy = (o) => o.kg >= HEAVY_KG;
+  // Предметы от 100 т (кит, МКС, БелАЗ) кладутся на весы только против крупного — от тонны:
+  // «90 слонов» ещё можно представить, «двадцать тысяч яблок» — нет.
+  const BIG_KG = 1e5, BIG_UNIT_KG = 1000;
   const TUTORIAL = ['человек', 'кот'];
 
   const $ = (id) => document.getElementById(id);
@@ -285,6 +288,7 @@
       const gap = mode === 'size' ? Math.max(ratio, 1 / ratio) : ratio;
       if (used.has(h) || used.has(u) || gap < level.min || gap > level.max) continue;
       if (mode === 'weight' && heavy(h) !== heavy(u)) continue;
+      if (mode === 'weight' && h.kg >= BIG_KG && u.kg < BIG_UNIT_KG) continue;
       // Недавние эталоны пропускаем, пока есть из чего выбирать.
       if (guard < 2000 && avoid.has(h.name)) continue;
       // В свободной игре удивительных предметов может ещё не быть в коллекции: тогда пары идут обычные.
