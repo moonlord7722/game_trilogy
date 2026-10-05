@@ -2,11 +2,13 @@
   const ROUNDS = 6;
   // min/max — границы правильного ответа, zeroAt — во сколько раз надо промахнуться для 0 очков,
   // slider — предел ползунка, showRef — подсказывать вес эталона до ответа,
-  // need — сколько предметов должно быть в коллекции, чтобы уровень открылся.
+  // need — сколько предметов должно быть в коллекции, чтобы уровень открылся,
+  // wow — в каждой паре есть «удивительный» предмет из тех, что идут сверх первой сотни.
   const WEIGHT_LEVELS = [
     { id: 'easy', title: 'Лёгкий', hint: 'Вес синего предмета подсказан', min: 3, max: 40, zeroAt: 8, slider: 150, showRef: true, need: 0 },
     { id: 'mid', title: 'Средний', hint: 'Без подсказок', min: 3, max: 150, zeroAt: 8, slider: 500, showRef: false, need: 40 },
     { id: 'hard', title: 'Сложный', hint: 'Большие числа, строгие очки', min: 10, max: 1000, zeroAt: 3, slider: 3000, showRef: false, need: 80 },
+    { id: 'expert', title: 'Эксперт', hint: 'Пары с удивительными предметами', min: 3, max: 1000, zeroAt: 3, slider: 3000, showRef: false, need: 100, wow: true },
   ];
   // Режим «Размер»: min/max — во сколько раз предметы пары отличаются по размеру,
   // span — во сколько раз ползунок уводит оранжевый предмет в каждую сторону от размера синего.
@@ -14,6 +16,7 @@
     { id: 'easy', title: 'Лёгкий', hint: 'Размеры подписаны', min: 1.2, max: 4, zeroAt: 3, span: 8, showRef: true, need: 0 },
     { id: 'mid', title: 'Средний', hint: 'Без подсказок', min: 1.2, max: 8, zeroAt: 2.5, span: 16, showRef: false, need: 40 },
     { id: 'hard', title: 'Сложный', hint: 'Большая разница, строгие очки', min: 3, max: 12, zeroAt: 2, span: 25, showRef: false, need: 80 },
+    { id: 'expert', title: 'Эксперт', hint: 'Пары с удивительными предметами', min: 1.2, max: 12, zeroAt: 1.8, span: 25, showRef: false, need: 100, wow: true },
   ];
   const MODES = {
     weight: {
@@ -27,7 +30,7 @@
   };
   // Ответ в «Размере» засчитывается как точный, если промах меньше этой доли.
   const SIZE_EXACT = 1.03;
-  const BY = { h: 'в высоту', w: 'в длину', d: 'в поперечнике' };
+  const BY = { h: 'в высоту', w: 'в длину', d: 'в поперечнике', s: 'в размахе' };
   const GOOD = 75, OK = 40;
   // Весы: наклон в градусах на единицу ln(положено / нужно), с упором.
   const TILT_PER_LN = 14, TILT_MAX = 22;
@@ -117,9 +120,11 @@
 
   // Все веса в игре приблизительные, поэтому всегда со знаком ≈.
   function fmtKg(kg) {
+    if (kg >= 1e9) return '≈ ' + num(Math.round(kg / 1e8) / 10) + ' млн т';
+    if (kg >= 1e6) return '≈ ' + num(Math.round(kg / 1e5) / 10) + ' тыс. т';
     if (kg >= 1000) return '≈ ' + num(Math.round(kg / 100) / 10) + ' т';
     if (kg >= 1) return '≈ ' + num(kg) + ' кг';
-    return '≈ ' + num(Math.round(kg * 1000)) + ' г';
+    return '≈ ' + num(Math.round(kg * 10000) / 10) + ' г';
   }
 
   function fmtTimes(x) {
@@ -137,6 +142,7 @@
   }
 
   const ALL = OBJECTS.concat(EXTRA);
+  EXTRA.forEach((o) => { o.wow = true; });
   // size: by — мера (высота, длина, диаметр), m — метры, ext — протяжённость силуэта по этой мере.
   ALL.forEach((o) => {
     const s = SIZES[o.name];
@@ -247,9 +253,11 @@
     if (save.owned < ACTIVE_UNTIL) {
       return `До среднего уровня — ещё ${left(ACTIVE_UNTIL - save.owned)}. За каждую доигранную партию открывается ${ACTIVE_STEP}.`;
     }
-    const hard = LEVELS[2].need;
-    const goal = save.owned < hard ? `До сложного уровня — ещё ${left(hard - save.owned)}.` : `Осталось открыть ${left(ORDER.length - save.owned)}.`;
-    return `${goal} Предмет даётся за каждый раунд от ${GOOD} очков без подсказки на среднем и сложном.`;
+    const hard = LEVELS[2].need, expert = LEVELS[3].need;
+    const goal = save.owned < hard ? `До сложного уровня — ещё ${left(hard - save.owned)}.`
+      : save.owned < expert ? `До уровня «Эксперт» — ещё ${left(expert - save.owned)}.`
+      : `Осталось открыть ${left(ORDER.length - save.owned)}.`;
+    return `${goal} Предмет даётся за каждый раунд от ${GOOD} очков без подсказки на среднем уровне и выше.`;
   }
 
   function showAlbum() {
@@ -274,6 +282,8 @@
       if (used.has(h) || used.has(u) || gap < level.min || gap > level.max) continue;
       // Недавние эталоны пропускаем, пока есть из чего выбирать.
       if (guard < 2000 && avoid.has(h.name)) continue;
+      // В свободной игре удивительных предметов может ещё не быть в коллекции: тогда пары идут обычные.
+      if (level.wow && guard < 3000 && !h.wow && !u.wow) continue;
       used.add(h); used.add(u);
       out.push({ h, u, ratio });
     }
@@ -429,9 +439,9 @@
       : `Сколько <span class="guess">${r.u.forms[2]}</span> уравновесят <span class="ref">${r.h.acc}</span>?`;
     if (mode === 'size') setScene(r);
     el.ref.innerHTML = r.h.art;
-    el.refTag.lastElementChild.textContent = fmtKg(r.h.kg);
+    if (mode === 'weight') setTag(el.refTag, fmtKg(r.h.kg));
     el.refTag.classList.toggle('off', !level.showRef);
-    el.unitTag.lastElementChild.textContent = '1 шт ' + fmtKg(r.u.kg);
+    if (mode === 'weight') setTag(el.unitTag, '1 шт ' + fmtKg(r.u.kg));
     el.unitTag.classList.add('off');
     el.pile.setAttribute('class', 'art guess');
     el.count.classList.remove('true');
@@ -455,6 +465,14 @@
       note(`На левой чаше ${r.h.forms[0]}. Набери ползунком или кнопками, сколько ${r.u.forms[2]} нужно на правую для равновесия.`);
       el.controls.classList.add('pulse');
     }
+  }
+
+  // Подпись на сцене: рамка растягивается под текст. cx — середина подписи.
+  function setTag(tag, text, cx = 0) {
+    const w = Math.max(60, text.length * 6.9 + 14);
+    tag.lastElementChild.textContent = text;
+    tag.firstElementChild.setAttribute('x', cx - w / 2);
+    tag.firstElementChild.setAttribute('width', w);
   }
 
   // Строка на плашке под весами, пока раунд не раскрыт: подсказка или шаг обучения.
@@ -937,8 +955,8 @@
     el.sGhost.innerHTML = '';
     boxes = [el.sRef.getBBox(), el.sGuess.getBBox()];
     el.sGuess.setAttribute('class', 'art guess');
-    el.sRefTag.lastElementChild.textContent = `${fmtM(r.h.size.m)} ${BY[r.h.size.by]}`;
-    el.sGuessTag.lastElementChild.textContent = `${fmtM(r.u.size.m)} ${BY[r.u.size.by]}`;
+    setTag(el.sRefTag, `${fmtM(r.h.size.m)} ${BY[r.h.size.by]}`, 90);
+    setTag(el.sGuessTag, `${fmtM(r.u.size.m)} ${BY[r.u.size.by]}`, 270);
     el.sRefTag.classList.toggle('off', !level.showRef);
     el.sGuessTag.classList.add('off');
   }

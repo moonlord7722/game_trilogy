@@ -169,7 +169,7 @@ button { font-family: inherit; cursor: pointer; }
 .seg button {
   flex: 1; padding: 10px 4px;
   border: 0; background: var(--paper); color: var(--ink);
-  font-size: 15px; font-weight: 600;
+  font-size: 14px; font-weight: 600;
 }
 .seg button + button { border-left: 2px solid var(--ink); }
 .seg button.locked { color: var(--ink-soft); font-weight: 400; }
