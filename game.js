@@ -1022,6 +1022,20 @@
     requestAnimationFrame(frame);
   }
 
+  // Широкая раскладка рассчитана на окно около 1200×500 и на большом экране растёт вместе с ним,
+  // занимая примерно 0,9 ширины или 0,85 высоты — что наступит раньше.
+  const WIDE_W = 1080, WIDE_H = 440, CARD_H = 620, ZOOM_MAX = 2.5;
+  function fit() {
+    const k = Math.min(innerWidth * 0.9 / WIDE_W, innerHeight * 0.85 / WIDE_H, ZOOM_MAX);
+    document.documentElement.style.setProperty('--k', Math.max(1, k).toFixed(3));
+    // Карточки меню и итогов выше игровой раскладки, поэтому их рост ограничен ещё и своей высотой.
+    document.documentElement.style.setProperty('--kc', Math.max(1, Math.min(k, innerHeight * 0.95 / CARD_H)).toFixed(3));
+  }
+  window.addEventListener('resize', fit);
+  // Во встроенных окнах (рамка площадки) событие resize приходит не всегда.
+  if (window.ResizeObserver) new ResizeObserver(fit).observe(document.documentElement);
+  fit();
+
   // Из браузера и облака берётся то сохранение, которое записано позже.
   async function boot() {
     const cloud = await Platform.init();

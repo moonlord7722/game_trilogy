@@ -241,7 +241,10 @@ figure.locked div {
 
 /* Широкий экран: весы слева на всю высоту, вопрос и управление справа. */
 @media (min-width: 820px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {
+  /* На большом экране вся раскладка увеличивается целиком: --k считает game.js по размеру окна. */
   #app {
+    zoom: var(--k, 1);
+    height: calc(100dvh / var(--k, 1));
     max-width: 1080px;
     padding: 20px 24px 28px;
     display: grid;
@@ -256,4 +259,5 @@ figure.locked div {
   h1, #result, #controls, #main { grid-column: 2; }
   h1 { font-size: 28px; }
   #result { margin-top: 0; }
+  .card { zoom: var(--kc, 1); }
 }
