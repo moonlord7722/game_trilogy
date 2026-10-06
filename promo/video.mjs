@@ -69,7 +69,7 @@ const send = (method, params = {}, sessionId) => new Promise((resolve, reject) =
 
 const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const SEED = {
-  tutorial: true, hints: 4, owned: 112, best: { easy: 431, mid: 388, 'size-easy': 402 },
+  tutorial: true, hints: 4, owned: 112, best: { easy: 431, mid: 388, 'size-easy': 402, 'speed-easy': 377 },
   streak: { count: 5, last: key(new Date(Date.now() - 864e5)) }, day: key(new Date()), daily: {}, level: 'easy', t: 1,
 };
 
@@ -138,14 +138,11 @@ const SCRIPT = `
     await wait(hold);
   };
 `;
-// По два раунда партии дня в «Весе» и в «Размере»: путь ползунка [положение, длительность] и пауза на результате.
+// По раунду партии дня в каждом режиме: путь ползунка [положение, длительность] и пауза на результате.
 const ROUNDS = [
-  [[[520, 900], [400, 700], [440, 500]], 1700],
-  [[[300, 700], [560, 900], [500, 500]], 1700],
-];
-const SIZE_ROUNDS = [
-  [[[700, 900], [860, 700], [810, 500]], 1700],
-  [[[300, 800], [430, 700], [390, 500]], 2200],
+  ['Вес', [[520, 900], [400, 700], [440, 500]], 1700],
+  ['Размер', [[700, 900], [860, 700], [810, 500]], 1700],
+  ['Скорость', [[600, 900], [730, 700], [680, 500]], 2200],
 ];
 
 const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
@@ -162,13 +159,11 @@ await sleep(1500);
 
 await call('Page.startScreencast', { format: 'jpeg', quality: 95, maxWidth: W * DPR, maxHeight: H * DPR, everyNthFrame: 1 });
 recording = true;
-const steps = (list) => list.map(([p, hold], i) =>
-  `await round(${JSON.stringify(p)}, ${hold});` + (i + 1 < list.length ? ` await tap($('main'));` : '')).join('\n');
-// После «Веса» игрок выходит в меню и переключает режим.
-const res = await run(`await wait(1200); await tap($('play-daily')); ${steps(ROUNDS)}
-  await tap($('exit')); await wait(500);
-  await tap(document.querySelectorAll('#modes button')[1]); await wait(700);
-  await tap($('play-daily')); ${steps(SIZE_ROUNDS)}`);
+// Между режимами игрок выходит в меню и переключает вкладку.
+const steps = ROUNDS.map(([, p, hold], i) => (i ? `await tap($('exit')); await wait(500);
+  await tap(document.querySelectorAll('#modes button')[${i}]); await wait(700);` : '')
+  + ` await tap($('play-daily')); await round(${JSON.stringify(p)}, ${hold});`).join('\n');
+const res = await run(`await wait(1200); ${steps}`);
 if (res.exceptionDetails) throw new Error(res.exceptionDetails.exception?.description || 'сценарий упал');
 recording = false;
 const end = Date.now() / 1000;

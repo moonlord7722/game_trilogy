@@ -98,7 +98,7 @@
   const el = {
     level: $('level'), round: $('round'), total: $('total'), question: $('question'),
     beam: $('beam'), left: $('left-pan'), right: $('right-pan'),
-    app: $('app'), modes: $('modes'), lead: $('lead'), modeNames: [...document.querySelectorAll('.mode-name')],
+    app: $('app'), stage: $('stage'), modes: $('modes'), lead: $('lead'), modeNames: [...document.querySelectorAll('.mode-name')],
     tRef: $('t-ref'), tGuess: $('t-guess'), tRefPre: $('t-ref-pre'), tGhost: $('t-ghost'),
     tRefTag: $('t-ref-tag'), tGuessTag: $('t-guess-tag'), tTicks: $('t-ticks'),
     sRef: $('s-ref'), sGuess: $('s-guess'), sGhost: $('s-ghost'), sRefTag: $('s-ref-tag'), sGuessTag: $('s-guess-tag'),
@@ -642,7 +642,7 @@
     el.round.textContent = isTutorial ? '' : `${idx + 1} / ${ROUNDS}`;
     el.total.textContent = total;
     el.question.innerHTML = mode === 'speed'
-      ? `<span class="ref">${cap(r.h.forms[0])}</span> на полном ходу. С какой скоростью мчится <span class="guess">${r.u.forms[0]}</span>?`
+      ? `<span class="ref">${cap(r.h.forms[0])}</span> мчится. А как быстро — <span class="guess">${r.u.forms[0]}</span>?`
       : mode === 'size'
       ? `<span class="ref">${cap(r.h.forms[0])}</span> в масштабе. Какого размера <span class="guess">${r.u.forms[0]}</span>?`
       : `Сколько <span class="guess">${r.u.forms[2]}</span> уравновесят <span class="ref">${r.h.acc}</span>?`;
@@ -953,15 +953,15 @@
   function showStreak() {
     const days = ['день', 'дня', 'дней'];
     const n = streakNow(), missed = missedDays(), lost = save.streak.count;
-    el.streakLine.textContent = (n ? `Серия: ${n} ${plural(n, days)} подряд`
+    el.streakLine.textContent = (n ? `Серия: ${n} ${plural(n, days)}`
       : missed ? `Серия прервана на ${lost} ${plural(lost, ['дне', 'днях', 'днях'])}` : 'Серия: начни с партии дня')
       + ` · Подсказок: ${save.hints}`;
     const cp = checkpoint();
     const shown = missed ? lost : n, filled = shown && shown % STREAK_SECRET === 0 ? STREAK_SECRET : shown % STREAK_SECRET;
     el.streakDots.innerHTML = Array.from({ length: STREAK_SECRET }, (_, i) => `<i${i < filled ? ' class="on"' : ''}></i>`).join('');
-    const prize = save.secrets < SECRETS.length ? 'секретный предмет' : 'ещё одна';
+    const prize = save.secrets < SECRETS.length ? 'секрет' : 'ещё одна';
     el.streakText.textContent = !missed
-      ? `Каждый день — подсказка, каждый ${STREAK_SECRET}-й — ${prize}, каждый ${STREAK_CHECK}-й — чекпоинт`
+      ? `День — подсказка, ${STREAK_SECRET}-й — ${prize}, ${STREAK_CHECK}-й — чекпоинт`
       : (Platform.hasAds ? 'Без видео серия ' : 'Серия ')
         + (cp ? `продолжится с чекпоинта — ${cp} ${plural(cp, days)}` : 'начнётся заново');
     el.streakFix.hidden = !missed || !Platform.hasAds;
@@ -1387,6 +1387,8 @@
     LEVELS = MODES[m].levels;
     level = LEVELS.find((lv) => lv.id === level.id) || LEVELS[0];
     el.app.className = m;
+    // Дорожки «Скорости» занимают не весь рисунок: кадр обрезается по ним, чтобы они были крупнее.
+    el.stage.setAttribute('viewBox', m === 'speed' ? '0 24 360 204' : '0 -12 360 240');
     el.modeNames.forEach((n) => { n.textContent = '· ' + MODES[m].title.toLowerCase(); });
   }
 
