@@ -63,7 +63,7 @@
   // В первый визит игрока её нет.
   const AD_EVERY = 2;
   // Подсказка «диапазон» оставляет ответы, отличающиеся не больше чем в RANGE_HINT раз.
-  const RANGE_HINT = 4, SIZE_RANGE_HINT = 2.5;
+  const RANGE_HINT = 2.5, SIZE_RANGE_HINT = 1.7;
   // Сверхтяжёлое (башни, пирамида, «Титаник») в «Весе» сравнивается только между собой:
   // тысячи слонов на чаше уже ничего не говорят глазу.
   const HEAVY_KG = 1e6;
@@ -72,6 +72,13 @@
   // «90 слонов» ещё можно представить, «двадцать тысяч яблок» — нет.
   const BIG_KG = 1e5, BIG_UNIT_KG = 1000;
   const TUTORIAL = ['человек', 'кот'];
+  // Серия дней: каждый её день приносит подсказку, каждый STREAK_SECRET-й — секретный предмет.
+  // Секретные предметы в обычную коллекцию не входят и открываются только серией, в этом порядке.
+  const STREAK_SECRET = 3;
+  const SECRET_NAMES = [
+    'золотой слиток', 'тираннозавр', 'Царь-колокол', '«Спутник-1»', 'моаи', '«Титаник»',
+    'кремлёвская звезда', 'кетцалькоатль', 'Царь-пушка', 'рафлезия', 'дирижабль «Гинденбург»', 'МКС',
+  ];
   // Цвета левого и правого предмета игрок выбирает сам: в сохранении лежат два тона цветового круга.
   // Пока выбора нет, остаются исходные синий и оранжевый.
   const CLASSIC = { ref: '#2e6eb5', guess: '#d85a30', truth: '#1d8c66', hues: [211, 15] };
@@ -100,7 +107,8 @@
     hintBtns: [...document.querySelectorAll('#hints button[data-hint]')],
     exit: $('exit'), leave: $('leave'), leaveStay: $('leave-stay'), leaveGo: $('leave-go'),
     levelNote: $('level-note'), playDaily: $('play-daily'), playFree: $('play-free'),
-    start: $('start'), levels: $('levels'), streak: $('streak'), sumMeta: $('sum-meta'),
+    start: $('start'), levels: $('levels'), sumMeta: $('sum-meta'),
+    streakLine: $('streak-line'), streakDots: $('streak-dots'), streakText: $('streak-text'), streakFix: $('streak-fix'),
     summary: $('summary'), sumTotal: $('sum-total'), sumSquares: $('sum-squares'),
     sumList: $('sum-list'), sumNew: $('sum-new'), share: $('share'), change: $('change'), again: $('again'),
     openAlbum: $('open-album'), album: $('album'), albumCount: $('album-count'),
@@ -212,13 +220,14 @@
 
   // best — рекорд по уровням, streak — серия дней с доигранной партией дня,
   // daily — партии дня за дату day: { done, total, guesses, hints } по id уровня,
-  // owned — размер коллекции, hints — запас подсказок, tutorial — обучение пройдено,
+  // owned — размер коллекции, secrets — сколько секретных предметов открыто серией,
+  // hints — запас подсказок, tutorial — обучение пройдено,
   // colors — тона левого и правого предмета, если игрок их менял,
   // level — последний выбранный уровень, t — время записи: по нему выбирается между браузером и облаком.
   function loadSave() {
     const blank = {
       best: {}, streak: { count: 0, last: '' }, day: '', daily: {},
-      owned: STARTERS.length, hints: START_HINTS, tutorial: false, level: 'easy',
+      owned: STARTERS.length, secrets: 0, hints: START_HINTS, tutorial: false, level: 'easy',
     };
     try {
       const s = JSON.parse(localStorage.getItem(SAVE_KEY));
@@ -236,10 +245,13 @@
     Platform.store(save);
   }
 
+  const keyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const dateOf = (key) => new Date(+key.slice(0, 4), key.slice(5, 7) - 1, +key.slice(8, 10));
+
   function dayKey(shift = 0) {
     const d = new Date();
     d.setDate(d.getDate() + shift);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    return keyOf(d);
   }
 
   // Партии дня хранятся только за сегодня: с новой датой вчерашние сбрасываются.
@@ -251,6 +263,15 @@
   function streakNow() {
     const { count, last } = save.streak;
     return last === dayKey() || last === dayKey(-1) ? count : 0;
+  }
+
+  // Сколько дней пропущено в прерванной серии. Пока сегодняшняя партия дня не сыграна,
+  // серию можно вернуть: одно видео закрывает один пропущенный день.
+  function missedDays() {
+    const { count, last } = save.streak;
+    if (!count || !last) return 0;
+    const gap = Math.round((dateOf(dayKey()) - dateOf(last)) / 864e5);
+    return gap >= 2 ? gap - 1 : 0;
   }
 
   const save = loadSave();
@@ -265,10 +286,20 @@
       const j = Math.floor(rng() * (i + 1));
       [rest[i], rest[j]] = [rest[j], rest[i]];
     }
-    return STARTERS.map(byName).concat(rest, EXTRA);
+    return STARTERS.map(byName).concat(rest, EXTRA.filter((o) => !SECRET_NAMES.includes(o.name)));
   })();
+  const SECRETS = SECRET_NAMES.map(byName);
+  const ALBUM = ORDER.length + SECRETS.length;
 
-  const collection = () => ORDER.slice(0, save.owned);
+  // Сохранение могло прийти из версии, где секретные предметы ещё были в общей коллекции.
+  function tidySave() {
+    save.owned = Math.min(save.owned, ORDER.length);
+    save.secrets = Math.max(0, Math.min(SECRETS.length, save.secrets || 0));
+  }
+  tidySave();
+
+  const collection = () => ORDER.slice(0, save.owned).concat(SECRETS.slice(0, save.secrets));
+  const ownedAll = () => save.owned + save.secrets;
   const unlocked = (lv) => save.owned >= lv.need;
 
   // Начисляет предметы за доигранную партию и запоминает, что показать в итогах.
@@ -290,7 +321,10 @@
 
   function nextGoal() {
     const left = (n) => `${n} ${plural(n, ['предмет', 'предмета', 'предметов'])}`;
-    if (save.owned >= ORDER.length) return 'Коллекция собрана целиком.';
+    if (save.owned >= ORDER.length) {
+      return save.secrets >= SECRETS.length ? 'Коллекция собрана целиком.'
+        : `Остались секретные предметы: они открываются за каждый ${STREAK_SECRET}-й день серии.`;
+    }
     if (save.owned < ACTIVE_UNTIL) {
       return `До среднего уровня — ещё ${left(ACTIVE_UNTIL - save.owned)}. За каждую доигранную партию открывается ${ACTIVE_STEP}.`;
     }
@@ -302,10 +336,13 @@
   }
 
   function showAlbum() {
-    el.albumCount.textContent = `· ${save.owned} из ${ORDER.length}`;
+    el.albumCount.textContent = `· ${ownedAll()} из ${ALBUM}`;
     el.albumNext.textContent = nextGoal();
-    el.albumGrid.innerHTML = collection().map(figure).join('')
-      + '<figure class="locked"><div>?</div></figure>'.repeat(ORDER.length - save.owned);
+    el.albumGrid.innerHTML = ORDER.slice(0, save.owned).map(figure).join('')
+      + '<figure class="locked"><div>?</div></figure>'.repeat(ORDER.length - save.owned)
+      + `<p class="grid-title">Секретные · ${save.secrets} из ${SECRETS.length} — за каждый ${STREAK_SECRET}-й день серии</p>`
+      + SECRETS.slice(0, save.secrets).map(figure).join('')
+      + '<figure class="locked"><div>★</div></figure>'.repeat(SECRETS.length - save.secrets);
     el.album.hidden = false;
     enter();
   }
@@ -845,6 +882,7 @@
   el.playFree.addEventListener('click', () => launch(false));
   el.openAlbum.addEventListener('click', showAlbum);
   el.albumBack.addEventListener('click', () => history.back());
+  el.streakFix.addEventListener('click', fixStreak);
   el.openSettings.addEventListener('click', showSettings);
   el.settingsBack.addEventListener('click', () => history.back());
   el.share.addEventListener('click', async () => {
@@ -864,11 +902,7 @@
 
   function showStart() {
     const daily = dailyToday();
-    const n = streakNow();
-    el.streak.textContent = [
-      n ? `Серия: ${n} ${plural(n, ['день', 'дня', 'дней'])} подряд` : '',
-      `Подсказок: ${save.hints}`,
-    ].filter(Boolean).join(' · ');
+    showStreak();
     el.lead.textContent = MODES[mode].lead;
     el.modes.textContent = '';
     Object.keys(MODES).forEach((m) => {
@@ -902,22 +936,59 @@
     el.playDaily.disabled = !open || Boolean(entry && entry.done);
     el.playFree.innerHTML = `Свободная игра<small>${free ? 'Предметы из твоей коллекции' : 'Откроется после партии дня'}</small>`;
     el.playFree.disabled = !open || !free;
-    el.openAlbum.textContent = `Коллекция · ${save.owned} из ${ORDER.length}`;
+    el.openAlbum.textContent = `Коллекция · ${ownedAll()} из ${ALBUM}`;
     el.start.hidden = false;
+  }
+
+  // Плашка серии в меню: сколько дней подряд, сколько осталось до секретного предмета
+  // и кнопка возврата прерванной серии за видео.
+  function showStreak() {
+    const days = ['день', 'дня', 'дней'];
+    const n = streakNow(), missed = missedDays(), lost = save.streak.count;
+    el.streakLine.textContent = (n ? `Серия: ${n} ${plural(n, days)} подряд`
+      : missed ? `Серия прервана на ${lost} ${plural(lost, ['дне', 'днях', 'днях'])}` : 'Серия: начни с партии дня')
+      + ` · Подсказок: ${save.hints}`;
+    const shown = missed ? lost : n, filled = shown && shown % STREAK_SECRET === 0 ? STREAK_SECRET : shown % STREAK_SECRET;
+    el.streakDots.innerHTML = Array.from({ length: STREAK_SECRET }, (_, i) => `<i${i < filled ? ' class="on"' : ''}></i>`).join('');
+    el.streakText.textContent = save.secrets < SECRETS.length
+      ? `Каждый день — подсказка, каждый ${STREAK_SECRET}-й — секретный предмет`
+      : `Каждый день — подсказка, каждый ${STREAK_SECRET}-й — ещё одна`;
+    el.streakFix.hidden = !missed || !Platform.hasAds;
+    el.streakFix.textContent = `Вернуть серию за видео · осталось ${missed}`;
+  }
+
+  async function fixStreak() {
+    if (!missedDays() || !await Platform.rewarded()) return;
+    const d = dateOf(save.streak.last);
+    d.setDate(d.getDate() + 1);
+    save.streak.last = keyOf(d);
+    storeSave();
+    showStreak();
   }
 
   // Записывает итог доигранной партии: рекорд уровня, партию дня, серию дней и награды.
   function finishGame() {
     finished = true;
+    // bonus — награда за новый день серии: подсказки и, возможно, секретный предмет.
+    let bonus = null;
     newBest = total > (save.best[slot()] || 0);
     if (newBest) save.best[slot()] = total;
     if (isDaily) {
       const entry = dailyToday()[slot()];
       entry.done = true;
       entry.total = total;
-      if (save.streak.last !== dayKey()) save.streak = { count: streakNow() + 1, last: dayKey() };
+      if (save.streak.last !== dayKey()) {
+        save.streak = { count: streakNow() + 1, last: dayKey() };
+        bonus = { day: save.streak.count, hints: 1, secret: null };
+        if (save.streak.count % STREAK_SECRET === 0) {
+          if (save.secrets < SECRETS.length) bonus.secret = SECRETS[save.secrets++];
+          else bonus.hints++;
+        }
+        save.hints += bonus.hints;
+      }
     }
     reward();
+    gained.streak = bonus;
     if (++played % AD_EVERY === 0 && !newcomer) adDue = true;
     storeSave();
   }
@@ -1149,13 +1220,17 @@
       .map((x) => `<li><span>${mode !== 'weight' ? `${cap(x.r.u.forms[0])} ${fmtVal(x.r.u)}`
         : `${cap(x.r.h.forms[0])} ≈ ${num(x.need)} ${plural(x.need, x.r.u.forms)}`}</span><span>+${x.score}</span></li>`)
       .join('');
+    const bonus = gained.streak;
+    const items = gained.items.concat(bonus && bonus.secret ? [bonus.secret] : []);
     const notes = [
       gained.level ? `Открыт уровень «${gained.level.title}»` : '',
       gained.hint ? '+1 подсказка за партию дня' : '',
-      gained.items.length ? `Новое в коллекции · ${save.owned} из ${ORDER.length}` : nextGoal(),
+      bonus ? `День серии ${bonus.day}: +${bonus.hints} ${plural(bonus.hints, ['подсказка', 'подсказки', 'подсказок'])}` : '',
+      bonus && bonus.secret ? `Секретный предмет за серию: ${bonus.secret.name}` : '',
+      items.length ? `Новое в коллекции · ${ownedAll()} из ${ALBUM}` : nextGoal(),
     ].filter(Boolean);
     el.sumNew.innerHTML = notes.map((t) => `<p>${t}</p>`).join('')
-      + (gained.items.length ? `<div class="shelf">${gained.items.map(figure).join('')}</div>` : '');
+      + (items.length ? `<div class="shelf">${items.map(figure).join('')}</div>` : '');
     el.share.textContent = 'Скопировать результат';
     el.summary.hidden = false;
   }
@@ -1339,6 +1414,7 @@
     const cloud = await Platform.init();
     if (cloud && (cloud.t || 0) > (save.t || 0)) {
       Object.assign(save, cloud);
+      tidySave();
       storeLocal();
       applyColors();
     }
