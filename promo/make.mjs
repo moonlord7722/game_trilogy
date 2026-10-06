@@ -78,7 +78,7 @@ async function page(url, w, h, dpr, seed) {
 
 const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const SEED = {
-  tutorial: true, hints: 4, owned: 46, best: { easy: 431, mid: 388 },
+  tutorial: true, sizeTip: true, hints: 4, owned: 112, best: { easy: 431, mid: 388, 'size-easy': 402 },
   streak: { count: 5, last: key(new Date(Date.now() - 864e5)) }, day: key(new Date()), daily: {}, level: 'easy', t: 1,
 };
 const GAME = `
@@ -86,8 +86,9 @@ const GAME = `
   const settle = async () => { while ($('main').disabled) await wait(200); await wait(900); };
   const guess = (v) => { $('slider').value = v; $('slider').dispatchEvent(new Event('input')); };
 `;
-// Положение ползунка в каждом из шести раундов.
+// Положение ползунка в каждом из шести раундов: сначала в «Весе», потом в «Размере».
 const GUESSES = [430, 520, 380, 560, 470, 500];
+const SIZE_GUESSES = [640, 380, 560, 700, 300, 450];
 
 await mkdir(OUT, { recursive: true });
 
@@ -98,7 +99,7 @@ p = await page(`${base}/promo/cover.html`, 800, 470, 1);
 await p.shot('cover-800x470');
 await p.close();
 
-// Телефон 9:16 и компьютер 16:9: меню, все раунды партии дня, итоги, коллекция.
+// Телефон 9:16 и компьютер 16:9: меню, все раунды партии дня, итоги, коллекция, потом партия «Размера».
 for (const [tag, w, h, dpr] of [['mobile', 405, 720, 2], ['desktop', 1280, 720, 1.5]]) {
   p = await page(`${base}/`, w, h, dpr, SEED);
   await p.shot(`${tag}-menu`);
@@ -113,6 +114,16 @@ for (const [tag, w, h, dpr] of [['mobile', 405, 720, 2], ['desktop', 1280, 720, 
   await p.shot(`${tag}-summary`);
   await p.run(`${GAME} $('change').click(); await wait(500); $('open-album').click(); await wait(500);`);
   await p.shot(`${tag}-album`);
+  await p.run(`${GAME} $('album-back').click(); await wait(500); document.querySelectorAll('#modes button')[1].click(); await wait(300);`);
+  await p.shot(`${tag}-size-menu`);
+  await p.run(`${GAME} $('play-daily').click(); await wait(600);`);
+  for (let i = 0; i < SIZE_GUESSES.length; i++) {
+    await p.run(`${GAME} guess(${SIZE_GUESSES[i]}); await wait(300);`);
+    await p.shot(`${tag}-size${i + 1}-guess`);
+    await p.run(`${GAME} $('main').click(); await settle();`);
+    await p.shot(`${tag}-size${i + 1}-reveal`);
+    await p.run(`${GAME} $('main').click(); await wait(500);`);
+  }
   await p.close();
 }
 

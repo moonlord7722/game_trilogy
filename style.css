@@ -241,9 +241,11 @@ figure.locked div {
 }
 
 #extras { display: flex; gap: 10px; }
+/* Рядом с кнопкой настроек надпись коллекции должна умещаться в строку и на узком телефоне. */
+#open-album { padding: 16px 6px; font-size: 16px; white-space: nowrap; }
 #open-settings {
   flex: none; display: flex; align-items: center;
-  padding: 0 16px;
+  padding: 0 12px;
   border: 2px solid var(--ink); border-radius: 12px;
 }
 #open-settings i { width: 20px; height: 20px; border-radius: 50%; background: var(--ref); }

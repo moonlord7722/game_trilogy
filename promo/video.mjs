@@ -1,5 +1,6 @@
-// Записывает вертикальное видео геймплея для карточки игры: promo/out/video-9x16.mp4.
-// Запуск: node promo/video.mjs  (нужны Microsoft Edge и Python с пакетом imageio-ffmpeg).
+// Записывает видео геймплея для карточки игры: вертикальное promo/out/video-9x16.mp4
+// или, с параметром wide, горизонтальное promo/out/video-16x9.mp4.
+// Запуск: node promo/video.mjs [wide]  (нужны Microsoft Edge и Python с пакетом imageio-ffmpeg).
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
@@ -11,8 +12,10 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = path.join(ROOT, 'promo', 'out');
 const EDGE = 'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe';
 const PORT = 9378;
-// Экран телефона 360×640 с плотностью 3 даёт кадр 1080×1920.
-const W = 360, H = 640, DPR = 3, FPS = 30;
+// Экран телефона 360×640 с плотностью 3 даёт кадр 1080×1920, окно 1280×720 с плотностью 1,5 — 1920×1080.
+const WIDE = process.argv[2] === 'wide';
+const [W, H, DPR] = WIDE ? [1280, 720, 1.5] : [360, 640, 3];
+const FPS = 30, NAME = WIDE ? 'video-16x9.mp4' : 'video-9x16.mp4';
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -66,7 +69,7 @@ const send = (method, params = {}, sessionId) => new Promise((resolve, reject) =
 
 const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const SEED = {
-  tutorial: true, hints: 4, owned: 46, best: { easy: 431, mid: 388 },
+  tutorial: true, hints: 4, owned: 112, best: { easy: 431, mid: 388, 'size-easy': 402 },
   streak: { count: 5, last: key(new Date(Date.now() - 864e5)) }, day: key(new Date()), daily: {}, level: 'easy', t: 1,
 };
 
@@ -135,18 +138,21 @@ const SCRIPT = `
     await wait(hold);
   };
 `;
-// Три раунда партии дня: путь ползунка [положение, длительность] и пауза на результате.
+// По два раунда партии дня в «Весе» и в «Размере»: путь ползунка [положение, длительность] и пауза на результате.
 const ROUNDS = [
   [[[520, 900], [400, 700], [440, 500]], 1700],
   [[[300, 700], [560, 900], [500, 500]], 1700],
-  [[[620, 900], [230, 900]], 2200],
+];
+const SIZE_ROUNDS = [
+  [[[700, 900], [860, 700], [810, 500]], 1700],
+  [[[300, 800], [430, 700], [390, 500]], 2200],
 ];
 
 const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
 const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
 const call = (m, p) => send(m, p, sessionId);
 const run = (code) => call('Runtime.evaluate', { expression: `(async () => { ${SCRIPT} ${code} })()`, awaitPromise: true });
-await call('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: DPR, mobile: true });
+await call('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: DPR, mobile: !WIDE });
 await call('Page.enable');
 await call('Page.addScriptToEvaluateOnNewDocument', {
   source: `localStorage.setItem('glazomer-save', ${JSON.stringify(JSON.stringify(SEED))});`,
@@ -156,9 +162,13 @@ await sleep(1500);
 
 await call('Page.startScreencast', { format: 'jpeg', quality: 95, maxWidth: W * DPR, maxHeight: H * DPR, everyNthFrame: 1 });
 recording = true;
-const steps = ROUNDS.map(([p, hold], i) =>
-  `await round(${JSON.stringify(p)}, ${hold});` + (i + 1 < ROUNDS.length ? ` await tap($('main'));` : '')).join('\n');
-const res = await run(`await wait(1200); await tap($('play-daily')); ${steps}`);
+const steps = (list) => list.map(([p, hold], i) =>
+  `await round(${JSON.stringify(p)}, ${hold});` + (i + 1 < list.length ? ` await tap($('main'));` : '')).join('\n');
+// После «Веса» игрок выходит в меню и переключает режим.
+const res = await run(`await wait(1200); await tap($('play-daily')); ${steps(ROUNDS)}
+  await tap($('exit')); await wait(500);
+  await tap(document.querySelectorAll('#modes button')[1]); await wait(700);
+  await tap($('play-daily')); ${steps(SIZE_ROUNDS)}`);
 if (res.exceptionDetails) throw new Error(res.exceptionDetails.exception?.description || 'сценарий упал');
 recording = false;
 const end = Date.now() / 1000;
@@ -174,11 +184,11 @@ const listFile = path.join(frames, 'list.txt');
 await writeFile(listFile, list);
 await mkdir(OUT, { recursive: true });
 const ffmpeg = execFileSync('python', ['-c', 'import imageio_ffmpeg; print(imageio_ffmpeg.get_ffmpeg_exe())']).toString().trim();
-const out = path.join(OUT, 'video-9x16.mp4');
+const out = path.join(OUT, NAME);
 execFileSync(ffmpeg, ['-y', '-loglevel', 'error', '-f', 'concat', '-safe', '0', '-i', listFile,
   '-vf', `fps=${FPS},scale=${W * DPR}:${H * DPR}:flags=lanczos,format=yuv420p`,
   '-c:v', 'libx264', '-crf', '18', '-preset', 'slow', '-movflags', '+faststart', '-an', out]);
-console.log(`video-9x16.mp4: ${shots.length} кадров записи, ${(shots.at(-1).t - shots[0].t).toFixed(1)} с`);
+console.log(`${NAME}: ${shots.length} кадров записи, ${(shots.at(-1).t - shots[0].t).toFixed(1)} с`);
 
 ws.close();
 edge.kill();
