@@ -63,7 +63,9 @@
   // В первый визит игрока её нет.
   const AD_EVERY = 2;
   // Подсказка «диапазон» оставляет ответы, отличающиеся не больше чем в RANGE_HINT раз.
-  const RANGE_HINT = 2.5, SIZE_RANGE_HINT = 1.7;
+  const RANGE_HINT = 2, SIZE_RANGE_HINT = 1.5;
+  // «Зал» называет ответ с ошибкой от HALL_MIN до HALL_MAX раз в любую сторону.
+  const HALL_MIN = 1.08, HALL_MAX = 1.2;
   // Сверхтяжёлое (башни, пирамида, «Титаник») в «Весе» сравнивается только между собой:
   // тысячи слонов на чаше уже ничего не говорят глазу.
   const HEAVY_KG = 1e6;
@@ -74,7 +76,8 @@
   const TUTORIAL = ['человек', 'кот'];
   // Серия дней: каждый её день приносит подсказку, каждый STREAK_SECRET-й — секретный предмет.
   // Секретные предметы в обычную коллекцию не входят и открываются только серией, в этом порядке.
-  const STREAK_SECRET = 3;
+  // Каждый STREAK_CHECK-й день — чекпоинт: прерванная серия продолжается с него, а не с нуля.
+  const STREAK_SECRET = 3, STREAK_CHECK = 7;
   const SECRET_NAMES = [
     'золотой слиток', 'тираннозавр', 'Царь-колокол', '«Спутник-1»', 'моаи', '«Титаник»',
     'кремлёвская звезда', 'кетцалькоатль', 'Царь-пушка', 'рафлезия', 'дирижабль «Гинденбург»', 'МКС',
@@ -273,6 +276,9 @@
     const gap = Math.round((dateOf(dayKey()) - dateOf(last)) / 864e5);
     return gap >= 2 ? gap - 1 : 0;
   }
+
+  // Последний чекпоинт серии: с него она продолжится, если прервётся.
+  const checkpoint = () => Math.floor(save.streak.count / STREAK_CHECK) * STREAK_CHECK;
 
   const save = loadSave();
 
@@ -691,41 +697,41 @@
 
   // ---------- подсказки ----------
 
-  // «Зал» сравнивает предмет на оранжевой чаше с третьим, по возможности из коллекции.
+  // «Зал» называет ответ примерно: ошибка зависит только от раунда, перезагрузка её не меняет.
   function hallHint(r) {
-    for (const pool of [collection(), ALL]) {
-      let best = null;
-      usable(pool).forEach((t) => {
-        if (t === r.h || t === r.u) return;
-        if (mode === 'weight' && heavy(t) !== heavy(r.u)) return;
-        const [a, b] = val(t) > val(r.u) ? [t, r.u] : [r.u, t];
-        const x = val(a) / val(b), n = Math.round(x);
-        if (n < 2 || n > 20) return;
-        const err = Math.abs(x - n) / x;
-        if (!best || err < best.err) best = { a, b, n, err };
-      });
-      const as = mode === 'size' ? 'по размеру как' : 'весит как';
-      if (best && mode === 'speed') {
-        return `Зал считает: ${best.a.forms[0]} ≈ в ${best.n} ${plural(best.n, ['раз', 'раза', 'раз'])} быстрее, чем ${best.b.forms[0]}`;
-      }
-      if (best) return `Зал считает: ${best.a.forms[0]} ${as} ≈ ${best.n} ${plural(best.n, best.b.forms)}`;
-    }
-    return '';
+    const rng = mulberry32(Math.round(r.ratio * 977) + idx * 13 + 5);
+    const side = rng() < 0.5 ? -1 : 1;
+    const k = Math.exp(side * (Math.log(HALL_MIN) + rng() * Math.log(HALL_MAX / HALL_MIN)));
+    if (mode === 'size') return `Зал думает: около ${fmtM(k * r.u.size.m)} ${BY[r.u.size.by]}`.replace('≈ ', '');
+    if (mode === 'speed') return `Зал думает: около ${fmtKmh(k * r.u.speed.v)}`.replace('≈ ', '');
+    const need = Math.max(1, Math.round(r.ratio));
+    let n = Math.max(1, Math.round(need * k));
+    // Точного ответа зал не даёт.
+    if (n === need) n = need + (side < 0 && need > 1 ? -1 : 1);
+    return `Зал думает: около ${num(n)} ${plural(n, r.u.forms)}`;
+  }
+
+  // Насколько правый предмет отличается от левого, словами: для подсказки величины в «Размере» и «Скорости».
+  function gapWord(ratio, more, less) {
+    const x = Math.max(ratio, 1 / ratio);
+    return (x < 1.5 ? 'чуть ' : x < 3 ? '' : 'намного ') + (ratio > 1 ? more : less);
   }
 
   function applyHint(type) {
     const r = rounds[idx];
     if (type === 'weight' && mode === 'size') {
       el.sRefTag.classList.remove('off');
-      note(`${cap(r.h.forms[0])} — ${fmtM(r.h.size.m)} ${BY[r.h.size.by]}`);
+      note(`${cap(r.h.forms[0])} — ${fmtM(r.h.size.m)} ${BY[r.h.size.by]}, ${r.u.forms[0]} ${gapWord(r.ratio, 'крупнее', 'мельче')}`);
       show(count);
     } else if (type === 'weight' && mode === 'speed') {
       el.tRefTag.classList.remove('off');
-      note(`${cap(r.h.forms[0])} — ${fmtKmh(r.h.speed.v)}`);
+      note(`${cap(r.h.forms[0])} — ${fmtKmh(r.h.speed.v)}, ${r.u.forms[0]} ${gapWord(r.ratio, 'быстрее', 'медленнее')}`);
       show(count);
     } else if (type === 'weight') {
+      // В «Весе» подсказка называет оба веса: остаётся поделить.
       el.refTag.classList.remove('off');
-      note(`${cap(r.h.forms[0])} весит ${fmtKg(r.h.kg)}`);
+      el.unitTag.classList.remove('off');
+      note(`${cap(r.h.forms[0])} весит ${fmtKg(r.h.kg)}, ${r.u.forms[0]} — ${fmtKg(r.u.kg).replace('≈ ', '')}`);
     } else if (type === 'range' && mode !== 'weight') {
       const p = mulberry32(Math.round(r.ratio * 1000) + idx)();
       lo = Math.max(1 / level.span, r.ratio / Math.pow(SIZE_RANGE_HINT, p));
@@ -743,6 +749,8 @@
       setCount(count);
     } else {
       note(hallHint(r));
+      // Чтобы сверяться с залом, игрок должен видеть своё число.
+      show(count);
     }
   }
 
@@ -756,7 +764,7 @@
     el.hintAd.hidden = !offer;
     el.hintBtns.forEach((b) => {
       if (b.dataset.hint === 'weight') b.textContent = MODES[mode].hint;
-      b.hidden = b.dataset.hint === 'weight' && level.showRef;
+      b.hidden = b.dataset.hint === 'weight' && level.showRef && mode !== 'weight';
       b.disabled = Boolean(taken) || save.hints < 1;
       b.classList.toggle('on', taken === b.dataset.hint);
     });
@@ -825,13 +833,13 @@
     shown = c;
     const r = rounds[idx];
     if (mode === 'speed') {
-      const open = level.showRef || hintLog[idx] === 'weight' || phase === 'truth' || phase === 'done';
+      const open = level.showRef || hintLog[idx] === 'weight' || hintLog[idx] === 'hall' || phase === 'truth' || phase === 'done';
       el.count.innerHTML = open ? `<b>${fmtKmh(c * r.h.speed.v)}</b>${r.u.forms[0]}` : `<b>?</b>${r.u.forms[0]}`;
       return drawTrack(c);
     }
     if (mode === 'size') {
       // Число видно, только когда размер синего предмета известен или раунд раскрыт.
-      const open = level.showRef || hintLog[idx] === 'weight' || phase === 'truth' || phase === 'done';
+      const open = level.showRef || hintLog[idx] === 'weight' || hintLog[idx] === 'hall' || phase === 'truth' || phase === 'done';
       el.count.innerHTML = open ? `<b>${fmtM(c * r.u.size.m / r.ratio)}</b>${BY[r.u.size.by]}` : `<b>?</b>${r.u.forms[0]}`;
       return drawScene(c);
     }
@@ -948,11 +956,14 @@
     el.streakLine.textContent = (n ? `Серия: ${n} ${plural(n, days)} подряд`
       : missed ? `Серия прервана на ${lost} ${plural(lost, ['дне', 'днях', 'днях'])}` : 'Серия: начни с партии дня')
       + ` · Подсказок: ${save.hints}`;
+    const cp = checkpoint();
     const shown = missed ? lost : n, filled = shown && shown % STREAK_SECRET === 0 ? STREAK_SECRET : shown % STREAK_SECRET;
     el.streakDots.innerHTML = Array.from({ length: STREAK_SECRET }, (_, i) => `<i${i < filled ? ' class="on"' : ''}></i>`).join('');
-    el.streakText.textContent = save.secrets < SECRETS.length
-      ? `Каждый день — подсказка, каждый ${STREAK_SECRET}-й — секретный предмет`
-      : `Каждый день — подсказка, каждый ${STREAK_SECRET}-й — ещё одна`;
+    const prize = save.secrets < SECRETS.length ? 'секретный предмет' : 'ещё одна';
+    el.streakText.textContent = !missed
+      ? `Каждый день — подсказка, каждый ${STREAK_SECRET}-й — ${prize}, каждый ${STREAK_CHECK}-й — чекпоинт`
+      : (Platform.hasAds ? 'Без видео серия ' : 'Серия ')
+        + (cp ? `продолжится с чекпоинта — ${cp} ${plural(cp, days)}` : 'начнётся заново');
     el.streakFix.hidden = !missed || !Platform.hasAds;
     el.streakFix.textContent = `Вернуть серию за видео · осталось ${missed}`;
   }
@@ -978,9 +989,14 @@
       entry.done = true;
       entry.total = total;
       if (save.streak.last !== dayKey()) {
-        save.streak = { count: streakNow() + 1, last: dayKey() };
-        bonus = { day: save.streak.count, hints: 1, secret: null };
-        if (save.streak.count % STREAK_SECRET === 0) {
+        // Прерванная серия продолжается с последнего чекпоинта. paid — до какого дня серии
+        // награды за каждый STREAK_SECRET-й день уже выданы: после отката они не выдаются повторно.
+        const base = streakNow() || checkpoint();
+        save.streak = { count: base + 1, last: dayKey(), paid: base ? save.streak.paid || 0 : 0 };
+        const day = save.streak.count;
+        bonus = { day, hints: 1, secret: null, check: day % STREAK_CHECK === 0 };
+        if (day % STREAK_SECRET === 0 && day > save.streak.paid) {
+          save.streak.paid = day;
           if (save.secrets < SECRETS.length) bonus.secret = SECRETS[save.secrets++];
           else bonus.hints++;
         }
@@ -1227,6 +1243,7 @@
       gained.hint ? '+1 подсказка за партию дня' : '',
       bonus ? `День серии ${bonus.day}: +${bonus.hints} ${plural(bonus.hints, ['подсказка', 'подсказки', 'подсказок'])}` : '',
       bonus && bonus.secret ? `Секретный предмет за серию: ${bonus.secret.name}` : '',
+      bonus && bonus.check ? `Чекпоинт: серия больше не упадёт ниже ${bonus.day} ${plural(bonus.day, ['дня', 'дней', 'дней'])}` : '',
       items.length ? `Новое в коллекции · ${ownedAll()} из ${ALBUM}` : nextGoal(),
     ].filter(Boolean);
     el.sumNew.innerHTML = notes.map((t) => `<p>${t}</p>`).join('')
