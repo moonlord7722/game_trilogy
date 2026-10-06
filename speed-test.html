@@ -8,7 +8,7 @@
   <style>
     /* Проба механики: отдельная страница, в игру и в архив не входит. */
     #result { margin-top: 0; }
-    #s-ghost { opacity: 0.3; }
+    #s-ghost, #s-ref-pre { opacity: 0.3; }
     .tick { stroke: var(--ink); stroke-width: 1; opacity: 0.35; }
     .finish { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 4 4; }
     #nums { padding: 5px 12px; border: 2px solid var(--ink); border-radius: 999px; background: var(--paper); color: var(--ink); font-size: 14px; font-weight: 600; }
@@ -27,8 +27,9 @@
       <path class="ink" d="M8 92H352M8 196H352"/>
       <path class="finish" d="M340 30V92M340 134V196"/>
       <g id="ticks"></g>
-      <g id="s-ref" class="art ref"></g>
+      <g id="s-ref-pre" class="art ref"></g>
       <g id="s-ghost" class="art guess"></g>
+      <g id="s-ref" class="art ref"></g>
       <g id="s-guess" class="art guess"></g>
       <g id="s-ref-tag" class="tag ref"><rect y="97" height="20" rx="5"/><text y="111" text-anchor="middle"></text></g>
       <g id="s-guess-tag" class="tag true"><rect y="201" height="20" rx="5"/><text y="215" text-anchor="middle"></text></g>
@@ -62,16 +63,16 @@
       'человек': { v: 40, hop: true }, 'лошадь': { v: 70, flip: true, hop: true },
       'слон': { v: 40, flip: true, hop: true }, 'кот': { v: 48, hop: true },
       '«Нива»': { v: 140 }, 'страус': { v: 70, flip: true, hop: true },
-      'электросамокат': { v: 25, flip: true }, 'заяц': { v: 70, flip: true, hop: true },
+      'электросамокат': { v: 25 }, 'заяц': { v: 70, flip: true, hop: true },
       'лев': { v: 80, flip: true, hop: true }, 'поезд «Сапсан»': { v: 250 },
     };
-    // Пары: слева предмет с известной скоростью, справа — тот, кого разгоняет игрок.
+    // Пары: сверху предмет с известной скоростью, снизу — тот, чью скорость выставляет игрок.
     const PAIRS = [['человек', 'лошадь'], ['слон', 'кот'], ['«Нива»', 'страус'], ['электросамокат', 'заяц'], ['лев', 'поезд «Сапсан»']];
-    // SPAN — во сколько раз ползунок уводит скорость в каждую сторону от скорости левого предмета.
+    // SPAN — во сколько раз ползунок уводит скорость в каждую сторону от скорости верхнего предмета.
     const SPAN = 6, ZERO_AT = 2.5, EXACT = 1.03;
-    // Дорожка: от X0 до X1, предмет размером ICON; самый быстрый на экране проходит её за T_FAST секунд,
-    // отставшего ждут ещё T_WAIT, потом забег начинается заново.
-    const X0 = 16, X1 = 340, ICON = 60, LANES = [92, 196], T_FAST = 1.5, T_WAIT = 2.2, T_PAUSE = 0.7;
+    // Дорожка: от X0 до X1, предмет размером ICON. Лидер забега проходит её за T_RUN секунд,
+    // после его финиша картинка замирает на T_HOLD.
+    const X0 = 16, X1 = 340, ICON = 60, LANES = [92, 196], T_RUN = 2, T_HOLD = 0.9;
     const RUN = X1 - X0 - ICON;
 
     const $ = (id) => document.getElementById(id);
@@ -81,9 +82,9 @@
     const fmt = (v) => '≈ ' + (v >= 10 ? Math.round(v) : Math.round(v * 10) / 10).toLocaleString('ru-RU') + ' км/ч';
 
     let idx = 0, total = 0, phase = 'guess', numbers = true;
-    let h, u, q = 1, ghost = 0;
-    // pos — пройденный путь каждого бегуна в долях дорожки, clock — время от старта забега.
-    let pos = [0, 0, 0], clock = 0, lastT = 0;
+    let h, u, q = 1;
+    // Забег: runners — кто бежит ({ g, o, lane, v, at }), after — что сделать, когда он закончится.
+    let runners = [], clock = 0, lastT = 0, after = null;
 
     $('ticks').innerHTML = LANES.map((y) =>
       Array.from({ length: 11 }, (_, i) => `<path class="tick" d="M${X0 + i * (X1 - X0) / 10} ${y}v5"/>`).join('')).join('');
@@ -96,6 +97,7 @@
       tag.firstElementChild.setAttribute('width', w);
     }
 
+    // at — пройденная доля дорожки.
     function place(g, o, lane, at) {
       const x = X0 + at * RUN, k = ICON / 100;
       const hop = o.hop && at > 0 && at < 1 ? -Math.abs(Math.sin(at * RUN / 9)) * 3 : 0;
@@ -103,27 +105,34 @@
       g.setAttribute('transform', o.flip ? `translate(${x + ICON} ${y}) scale(${-k} ${k})` : `translate(${x} ${y}) scale(${k})`);
     }
 
+    // До старта оба стоят на линии, а бледные тени показывают прогноз: где каждый будет, когда первый финиширует.
     function show() {
-      const open = numbers || phase !== 'guess';
-      $('count').innerHTML = open ? `<b>${fmt((phase === 'guess' ? q : u.v / h.v) * h.v)}</b>${u.forms[0]}` : `<b>?</b>${u.forms[0]}`;
-      $('count').classList.toggle('true', phase !== 'guess');
+      const open = numbers || phase === 'done';
+      const v = phase === 'guess' ? q * h.v : u.v;
+      $('count').innerHTML = open ? `<b>${fmt(v)}</b>${u.forms[0]}` : `<b>?</b>${u.forms[0]}`;
+      $('count').classList.toggle('true', phase === 'done');
       $('s-ref-tag').classList.toggle('off', !open);
       $('nums').textContent = numbers ? 'С числами' : 'Без чисел';
+      if (phase !== 'guess') return;
+      place($('s-ref'), h, 0, 0);
+      place($('s-guess'), u, 1, 0);
+      place($('s-ref-pre'), h, 0, Math.min(1, 1 / q));
+      place($('s-ghost'), u, 1, Math.min(1, q));
     }
 
     function start() {
       [h, u] = PAIRS[idx].map(get);
-      phase = 'guess'; q = 1; ghost = 0; clock = 0; pos = [0, 0, 0];
+      phase = 'guess'; q = 1; runners = [];
       $('round').textContent = `${idx + 1} / ${PAIRS.length}`;
       $('total').textContent = total;
       $('question').innerHTML = `<span class="ref">${cap(h.forms[0])}</span> на полном ходу. С какой скоростью мчится <span class="guess">${u.forms[0]}</span>?`;
-      $('s-ref').innerHTML = h.art;
-      $('s-guess').innerHTML = u.art;
+      $('s-ref').innerHTML = $('s-ref-pre').innerHTML = h.art;
+      $('s-guess').innerHTML = $('s-ghost').innerHTML = u.art;
       $('s-guess').setAttribute('class', 'art guess');
-      $('s-ghost').innerHTML = '';
+      $('s-ref-pre').style.display = $('s-ghost').style.display = '';
       setTag($('s-ref-tag'), fmt(h.v), 180);
       $('s-guess-tag').classList.add('off');
-      $('verdict').textContent = idx ? '' : 'Верхний бежит со своей скоростью. Ползунком разгони или притормози нижнего до настоящей.';
+      $('verdict').textContent = idx ? '' : 'Бледные тени — прогноз финиша. Выставь скорость нижнего и дай старт.';
       $('fact').textContent = '';
       $('result').classList.toggle('empty', idx > 0);
       $('controls').classList.remove('off');
@@ -138,50 +147,71 @@
       show();
     }
 
-    function reveal() {
+    function race(list, then) {
+      runners = list.map((r) => ({ ...r, at: 0 }));
+      clock = 0;
+      after = then;
+    }
+
+    function release() {
       const truth = u.v / h.v, f = q / truth, off = Math.abs(Math.log(f));
       const score = off < Math.log(EXACT) ? 100 : Math.round(100 * Math.max(0, 1 - off / Math.log(ZERO_AT)));
-      phase = 'truth'; ghost = q; clock = 0; pos = [0, 0, 0];
+      const over = f > 1, x = over ? f : 1 / f, wild = score === 0;
+      phase = 'run';
       total += score;
       $('controls').classList.add('off');
       $('main').disabled = true;
-      // Ответ игрока остаётся бледной тенью, зелёный силуэт бежит с настоящей скоростью.
-      $('s-ghost').innerHTML = u.art;
-      $('s-guess').setAttribute('class', 'art true');
-      setTag($('s-guess-tag'), fmt(u.v), 180);
-      $('s-guess-tag').classList.remove('off');
-      show();
-      const over = f > 1, x = over ? f : 1 / f;
+      $('result').classList.add('empty');
+      $('s-ref-pre').style.display = $('s-ghost').style.display = 'none';
+
       const miss = score === 100 ? '' : x < 1.5 ? `${over ? 'Быстрее' : 'Медленнее'} на ${Math.max(1, Math.round(Math.abs(f - 1) * 100))} %`
         : `${over ? 'Быстрее' : 'Медленнее'} в ${(Math.round(x * 10) / 10).toLocaleString('ru-RU')} раза`;
-      const word = score === 100 ? 'Точно!' : score >= 70 ? 'Глаз намётан!' : score >= 30 ? (over ? 'Разогнался!' : 'Плетётся!') : 'Мимо!';
-      setTimeout(() => {
+      const word = score === 100 ? 'Точно!' : score >= 70 ? 'Глаз намётан!' : score >= 30 ? (over ? 'Разогнался!' : 'Плетётся!')
+        : over ? 'Быстрее пули!' : 'Медленнее черепахи!';
+      const verdict = () => {
         $('verdict').textContent = `${word} · +${score}`;
-        $('fact').innerHTML = `${miss ? miss + '<br>' : ''}${cap(u.forms[0])} — <b>${fmt(u.v)}</b>`;
+        $('fact').innerHTML = miss;
         $('result').classList.remove('empty');
         $('total').textContent = total;
-        $('main').textContent = idx + 1 < PAIRS.length ? 'Дальше' : 'Сначала';
-        $('main').disabled = false;
-        phase = 'done';
-      }, 1800);
+      };
+      // Второй забег — как на самом деле: зелёный бежит с настоящей скоростью, ответ игрока — бледной тенью рядом.
+      const real = () => {
+        $('s-guess').setAttribute('class', 'art true');
+        setTag($('s-guess-tag'), fmt(u.v), 180);
+        $('s-guess-tag').classList.remove('off');
+        const list = [{ g: $('s-ref'), o: h, lane: 0, v: 1 }, { g: $('s-guess'), o: u, lane: 1, v: truth }];
+        if (!wild) {
+          $('s-ghost').style.display = '';
+          list.push({ g: $('s-ghost'), o: u, lane: 1, v: q });
+        }
+        race(list, () => {
+          phase = 'done';
+          $('fact').innerHTML = `${miss ? miss + '<br>' : ''}${cap(u.forms[0])} — <b>${fmt(u.v)}</b>`;
+          $('main').textContent = idx + 1 < PAIRS.length ? 'Дальше' : 'Сначала';
+          $('main').disabled = false;
+          show();
+        });
+      };
+      // Совсем дикий ответ не разыгрывается: сразу вердикт и настоящий забег.
+      if (wild) { verdict(); return real(); }
+      race([{ g: $('s-ref'), o: h, lane: 0, v: 1 }, { g: $('s-guess'), o: u, lane: 1, v: q }], () => { verdict(); real(); });
     }
 
     function frame(t) {
       const dt = Math.min(0.033, (t - lastT) / 1000 || 0);
       lastT = t;
-      // Скорости в долях скорости левого: левый, ответ игрока, настоящая.
-      const shownQ = phase === 'guess' ? q : u.v / h.v;
-      const speeds = [1, shownQ, ghost || 0];
-      const top = Math.max(...speeds);
-      clock += dt;
-      pos = pos.map((p, i) => Math.min(1, p + speeds[i] / top / T_FAST * dt));
-      const done = pos.every((p, i) => p >= 1 || !speeds[i]);
-      if (clock > T_FAST + T_WAIT + T_PAUSE || (done && clock > 1 / (Math.min(...speeds.filter(Boolean)) / top / T_FAST) + T_PAUSE)) {
-        clock = 0; pos = [0, 0, 0];
+      if (runners.length) {
+        const top = Math.max(...runners.map((r) => r.v));
+        clock += dt;
+        // Когда лидер финишировал, остальные замирают там, где их застал финиш.
+        if (clock <= T_RUN + dt) {
+          runners.forEach((r) => { r.at = Math.min(1, r.v / top * clock / T_RUN); place(r.g, r.o, r.lane, r.at); });
+        } else if (clock > T_RUN + T_HOLD) {
+          const then = after;
+          runners = []; after = null;
+          if (then) then();
+        }
       }
-      place($('s-ref'), h, 0, pos[0]);
-      place($('s-guess'), u, 1, pos[1]);
-      if (ghost) place($('s-ghost'), u, 1, pos[2]);
       requestAnimationFrame(frame);
     }
 
@@ -192,7 +222,7 @@
     }));
     $('nums').addEventListener('click', () => { numbers = !numbers; show(); });
     $('main').addEventListener('click', () => {
-      if (phase === 'guess') return reveal();
+      if (phase === 'guess') return release();
       if (phase !== 'done') return;
       idx = (idx + 1) % PAIRS.length;
       if (!idx) total = 0;
