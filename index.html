@@ -84,7 +84,10 @@
         <button id="play-daily" type="button"></button>
         <button id="play-free" type="button"></button>
       </div>
-      <button id="open-album" type="button" class="ghost"></button>
+      <div id="extras">
+        <button id="open-album" type="button" class="ghost"></button>
+        <button id="open-settings" type="button" class="ghost" aria-label="Настройки" title="Настройки"><i></i><i></i></button>
+      </div>
     </div>
   </section>
 
@@ -94,6 +97,21 @@
       <p id="album-next"></p>
       <div id="album-grid"></div>
       <button id="album-back" type="button">Назад</button>
+    </div>
+  </section>
+
+  <section id="settings" class="overlay" hidden>
+    <div class="card">
+      <div class="brand">Настройки <span>· цвета предметов</span></div>
+      <div id="wheel">
+        <div id="wheel-ring"></div>
+        <svg id="wheel-view" viewBox="0 0 210 100" aria-hidden="true"></svg>
+        <button id="knob-ref" class="knob" type="button" aria-label="Цвет левого предмета">Л</button>
+        <button id="knob-guess" class="knob" type="button" aria-label="Цвет правого предмета">П</button>
+      </div>
+      <p id="color-note">«Л» — левый предмет, «П» — правый. Потяни кружок по кругу или выбери готовую пару.</p>
+      <div id="pairs"></div>
+      <button id="settings-back" type="button">Готово</button>
     </div>
   </section>
 

@@ -144,7 +144,7 @@ h1 .guess { color: var(--guess); }
 
 #slider { width: 100%; accent-color: var(--guess); height: 28px; }
 
-#main, #again, #share, #change, #open-album, #album-back, #leave-stay, #leave-go {
+#main, #again, #share, #change, #open-album, #album-back, #settings-back, #leave-stay, #leave-go {
   width: 100%;
   padding: 16px;
   border-radius: 12px;
@@ -199,9 +199,10 @@ button { font-family: inherit; cursor: pointer; }
 #sum-total small { font-size: 18px; font-weight: 400; color: var(--ink-soft); }
 #sum-squares { display: flex; gap: 6px; }
 #sum-squares i { flex: 1; height: 14px; border-radius: 3px; }
-.s-good { background: var(--true); }
+/* Квадраты итогов держат свои цвета, какими бы игрок ни сделал предметы. */
+.s-good { background: #1d8c66; }
 .s-mid { background: #e0a526; }
-.s-bad { background: var(--guess); }
+.s-bad { background: #d85a30; }
 #sum-list { margin: 0; padding: 0; list-style: none; font-size: 14px; color: var(--ink-soft); }
 #sum-list li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
 #sum-list li span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; }
@@ -238,6 +239,45 @@ figure.locked div {
   display: flex; align-items: center; justify-content: center;
   border-style: dashed; opacity: 0.4; font-size: 22px; font-weight: 700;
 }
+
+#extras { display: flex; gap: 10px; }
+#open-settings {
+  flex: none; display: flex; align-items: center;
+  padding: 0 16px;
+  border: 2px solid var(--ink); border-radius: 12px;
+}
+#open-settings i { width: 20px; height: 20px; border-radius: 50%; background: var(--ref); }
+#open-settings i + i { margin-left: -6px; background: var(--guess); box-shadow: 0 0 0 2px var(--paper); }
+
+/* Цветовой круг: кольцо тонов, на нём два кружка — цвета левого и правого предмета. */
+#wheel {
+  position: relative; align-self: center;
+  width: min(230px, 100%); aspect-ratio: 1;
+  touch-action: none;
+}
+#wheel-ring {
+  position: absolute; inset: 0; border-radius: 50%;
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - 31px), #000 calc(100% - 30px));
+  mask: radial-gradient(closest-side, transparent calc(100% - 31px), #000 calc(100% - 30px));
+}
+#wheel-view { position: absolute; left: 22%; top: 36.5%; width: 56%; pointer-events: none; }
+.knob {
+  position: absolute; width: 38px; height: 38px; padding: 0;
+  transform: translate(-50%, -50%);
+  border: 3px solid var(--paper); border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--ink);
+  color: #fff; font-size: 15px; font-weight: 700;
+  touch-action: none;
+}
+#knob-ref { background: var(--ref); }
+#knob-guess { background: var(--guess); }
+#color-note { margin: 0; font-size: 14px; line-height: 1.4; color: var(--ink-soft); }
+#pairs { display: flex; justify-content: space-between; gap: 6px; }
+#pairs button {
+  width: 40px; height: 40px; padding: 0;
+  border: 2px solid var(--ink); border-radius: 50%;
+}
+#pairs button.on { box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--ink); }
 
 /* Широкий экран: весы слева на всю высоту, вопрос и управление справа. */
 @media (min-width: 820px) and (min-height: 560px) and (min-aspect-ratio: 5/4) {

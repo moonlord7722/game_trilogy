@@ -5,7 +5,7 @@
   // need — сколько предметов должно быть в коллекции, чтобы уровень открылся,
   // wow — в каждой паре есть «удивительный» предмет из тех, что идут сверх первой сотни.
   const WEIGHT_LEVELS = [
-    { id: 'easy', title: 'Лёгкий', hint: 'Вес синего предмета подсказан', min: 3, max: 40, zeroAt: 8, slider: 150, showRef: true, need: 0 },
+    { id: 'easy', title: 'Лёгкий', hint: 'Вес левого предмета подсказан', min: 3, max: 40, zeroAt: 8, slider: 150, showRef: true, need: 0 },
     { id: 'mid', title: 'Средний', hint: 'Без подсказок', min: 3, max: 150, zeroAt: 8, slider: 500, showRef: false, need: 40 },
     { id: 'hard', title: 'Сложный', hint: 'Большие числа, строгие очки', min: 10, max: 1000, zeroAt: 3, slider: 3000, showRef: false, need: 80 },
     { id: 'expert', title: 'Эксперт', hint: 'Пары с удивительными предметами', min: 3, max: 1000, zeroAt: 3, slider: 3000, showRef: false, need: 100, wow: true },
@@ -60,6 +60,17 @@
   // «90 слонов» ещё можно представить, «двадцать тысяч яблок» — нет.
   const BIG_KG = 1e5, BIG_UNIT_KG = 1000;
   const TUTORIAL = ['человек', 'кот'];
+  // Цвета левого и правого предмета игрок выбирает сам: в сохранении лежат два тона цветового круга.
+  // Пока выбора нет, остаются исходные синий и оранжевый.
+  const CLASSIC = { ref: '#2e6eb5', guess: '#d85a30', truth: '#1d8c66', hues: [211, 15] };
+  // Тон затемняется, пока силуэт не станет достаточно контрастным на бумаге.
+  const PAPER_LUM = 0.895, CONTRAST = 3.2, SATURATION = 0.68;
+  // Зелёный цвет правильного ответа уступает место другому, если предмет выкрашен в похожий.
+  const TRUTH_HUES = [158, 280, 25], TRUTH_GAP = 50;
+  // Готовые пары; первая — исходные цвета.
+  const PAIRS = [null, [215, 330], [275, 40], [190, 355], [130, 300], [345, 200]];
+  // Кружки стоят на середине кольца: доля от размера круга. Ближе WHEEL_HOLE к центру круг не реагирует.
+  const KNOB_R = 43.5, WHEEL_HOLE = 0.6;
 
   const $ = (id) => document.getElementById(id);
   const el = {
@@ -80,6 +91,9 @@
     sumList: $('sum-list'), sumNew: $('sum-new'), share: $('share'), change: $('change'), again: $('again'),
     openAlbum: $('open-album'), album: $('album'), albumCount: $('album-count'),
     albumNext: $('album-next'), albumGrid: $('album-grid'), albumBack: $('album-back'),
+    openSettings: $('open-settings'), settings: $('settings'), settingsBack: $('settings-back'),
+    wheel: $('wheel'), wheelRing: $('wheel-ring'), wheelView: $('wheel-view'),
+    knobs: [$('knob-ref'), $('knob-guess')], pairs: $('pairs'),
   };
 
   let mode = 'weight', LEVELS = WEIGHT_LEVELS;
@@ -180,6 +194,7 @@
   // best — рекорд по уровням, streak — серия дней с доигранной партией дня,
   // daily — партии дня за дату day: { done, total, guesses, hints } по id уровня,
   // owned — размер коллекции, hints — запас подсказок, tutorial — обучение пройдено,
+  // colors — тона левого и правого предмета, если игрок их менял,
   // level — последний выбранный уровень, t — время записи: по нему выбирается между браузером и облаком.
   function loadSave() {
     const blank = {
@@ -275,6 +290,122 @@
     el.album.hidden = false;
     enter();
   }
+
+  // ---------- цвета предметов ----------
+
+  function luminance(h, s, l) {
+    const a = s * Math.min(l, 1 - l);
+    const ch = (n) => {
+      const k = (n + h / 30) % 12;
+      const c = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1));
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * ch(0) + 0.7152 * ch(8) + 0.0722 * ch(4);
+  }
+
+  function tone(h) {
+    let l = 52;
+    while (l > 20 && (PAPER_LUM + 0.05) / (luminance(h, SATURATION, l / 100) + 0.05) < CONTRAST) l -= 2;
+    return `hsl(${h}, ${SATURATION * 100}%, ${l}%)`;
+  }
+
+  const hueGap = (a, b) => {
+    const d = Math.abs(a - b) % 360;
+    return d > 180 ? 360 - d : d;
+  };
+  const hues = () => (Array.isArray(save.colors) && save.colors.length === 2 && save.colors.every(Number.isFinite)
+    ? save.colors : CLASSIC.hues);
+
+  function applyColors() {
+    const [a, b] = hues(), own = hues() !== CLASSIC.hues;
+    const far = (t) => Math.min(hueGap(t, a), hueGap(t, b));
+    const t = TRUTH_HUES.find((x) => far(x) >= TRUTH_GAP) ?? TRUTH_HUES.reduce((x, y) => (far(y) > far(x) ? y : x));
+    const st = document.documentElement.style;
+    st.setProperty('--ref', own ? tone(a) : CLASSIC.ref);
+    st.setProperty('--guess', own ? tone(b) : CLASSIC.guess);
+    st.setProperty('--true', t === TRUTH_HUES[0] ? CLASSIC.truth : tone(t));
+  }
+
+  function drawWheel() {
+    const now = hues(), own = now !== CLASSIC.hues;
+    el.knobs.forEach((k, i) => {
+      const a = now[i] * Math.PI / 180;
+      k.style.left = `${50 + KNOB_R * Math.sin(a)}%`;
+      k.style.top = `${50 - KNOB_R * Math.cos(a)}%`;
+    });
+    [...el.pairs.children].forEach((b, i) => {
+      const p = PAIRS[i];
+      b.classList.toggle('on', p ? own && p[0] === now[0] && p[1] === now[1] : !own);
+    });
+  }
+
+  function setHue(i, h) {
+    const next = hues().slice();
+    next[i] = ((Math.round(h) % 360) + 360) % 360;
+    save.colors = next;
+    applyColors();
+    drawWheel();
+  }
+
+  function setPair(pair) {
+    save.colors = pair && pair.slice();
+    applyColors();
+    drawWheel();
+    storeSave();
+  }
+
+  function showSettings() {
+    drawWheel();
+    el.settings.hidden = false;
+    enter();
+  }
+
+  // Круг собирается один раз: кольцо из тех же тонов, какими станут предметы, в середине — образец пары.
+  (() => {
+    el.wheelRing.style.background = `conic-gradient(${Array.from({ length: 37 }, (_, i) => tone(i * 10)).join(',')})`;
+    el.wheelView.innerHTML = `<g class="art ref">${byName('слон').art}</g><g class="art guess" transform="translate(110 0)">${byName('кот').art}</g>`;
+    PAIRS.forEach((pair) => {
+      const [a, b] = pair ? pair.map(tone) : [CLASSIC.ref, CLASSIC.guess];
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.style.background = `linear-gradient(90deg, ${a} 50%, ${b} 50%)`;
+      btn.setAttribute('aria-label', pair ? 'Готовая пара цветов' : 'Исходные цвета');
+      btn.addEventListener('click', () => setPair(pair));
+      el.pairs.appendChild(btn);
+    });
+
+    let grabbed = -1;
+    // Тон под пальцем и расстояние от центра в долях радиуса.
+    const at = (e) => {
+      const box = el.wheel.getBoundingClientRect();
+      const dx = e.clientX - box.left - box.width / 2, dy = e.clientY - box.top - box.height / 2;
+      return { h: Math.atan2(dx, -dy) * 180 / Math.PI, r: Math.hypot(dx, dy) / (box.width / 2) };
+    };
+    el.wheel.addEventListener('pointerdown', (e) => {
+      const { h, r } = at(e);
+      if (r < WHEEL_HOLE) return;
+      // Нажатие мимо кружков двигает тот, что ближе по кругу.
+      const knob = el.knobs.indexOf(e.target), now = hues();
+      grabbed = knob >= 0 ? knob : hueGap(h, now[0]) <= hueGap(h, now[1]) ? 0 : 1;
+      el.wheel.setPointerCapture(e.pointerId);
+      setHue(grabbed, h);
+    });
+    el.wheel.addEventListener('pointermove', (e) => { if (grabbed >= 0) setHue(grabbed, at(e).h); });
+    ['pointerup', 'pointercancel'].forEach((ev) => el.wheel.addEventListener(ev, () => {
+      if (grabbed < 0) return;
+      grabbed = -1;
+      storeSave();
+    }));
+    el.knobs.forEach((k, i) => k.addEventListener('keydown', (e) => {
+      const dir = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1 }[e.key];
+      if (!dir) return;
+      e.preventDefault();
+      setHue(i, hues()[i] + dir * 5);
+      storeSave();
+    }));
+  })();
+
+  applyColors();
 
   // ---------- партия ----------
 
@@ -418,8 +549,9 @@
   // Из недоигранной свободной партии выпускаем только после подтверждения.
   window.addEventListener('popstate', () => {
     if (!inside) return;
-    if (!el.album.hidden) {
-      el.album.hidden = true;
+    const panel = [el.album, el.settings].find((p) => !p.hidden);
+    if (panel) {
+      panel.hidden = true;
       inside = false;
       return;
     }
@@ -467,7 +599,7 @@
     if (hintLog[idx]) applyHint(hintLog[idx]);
     refreshHints();
     if (mode === 'size' && !save.sizeTip && !hintLog[idx]) {
-      note('Синий предмет в масштабе. Ползунком подгони оранжевый до настоящего размера и замерь.');
+      note('Левый предмет в масштабе. Ползунком подгони правый до настоящего размера и замерь.');
     }
     if (isTutorial) {
       coachStep = 1;
@@ -671,6 +803,8 @@
   el.playFree.addEventListener('click', () => launch(false));
   el.openAlbum.addEventListener('click', showAlbum);
   el.albumBack.addEventListener('click', () => history.back());
+  el.openSettings.addEventListener('click', showSettings);
+  el.settingsBack.addEventListener('click', () => history.back());
   el.share.addEventListener('click', async () => {
     // Раунды с подсказкой и переигранный раунд отмечены кружком вместо квадрата.
     const squares = results.map((r) => {
@@ -1042,6 +1176,7 @@
     if (cloud && (cloud.t || 0) > (save.t || 0)) {
       Object.assign(save, cloud);
       storeLocal();
+      applyColors();
     }
     setMode(MODES[save.mode] ? save.mode : 'weight');
     level = LEVELS.find((lv) => lv.id === save.level && unlocked(lv)) || LEVELS[0];
