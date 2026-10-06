@@ -107,10 +107,12 @@ h1 .guess { color: var(--guess); }
 .tag.true { color: var(--true); }
 .tag.off { display: none; }
 /* Сцена режима «Размер» лежит в том же рисунке, что и весы: видна одна из двух. */
-#size-stage, .size #scale-stage { display: none; }
-.size #size-stage { display: inline; }
-.size #result { margin-top: 0; }
-#s-ghost { opacity: 0.3; }
+#size-stage, #speed-stage, .size #scale-stage, .speed #scale-stage { display: none; }
+.size #size-stage, .speed #speed-stage { display: inline; }
+.size #result, .speed #result { margin-top: 0; }
+#s-ghost, #t-ghost, #t-ref-pre { opacity: 0.3; }
+.tick { stroke: var(--ink); stroke-width: 1; opacity: 0.35; }
+.finish { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 4 4; }
 #level { color: var(--ink); }
 
 #verdict, #fact { margin: 0; text-align: center; }
@@ -208,9 +210,10 @@ button { font-family: inherit; cursor: pointer; }
 #sum-list li span:last-child { color: var(--ink); font-variant-numeric: tabular-nums; }
 .hinted { background-image: repeating-linear-gradient(45deg, transparent 0 4px, var(--paper) 4px 6px); }
 
-#hints { display: flex; align-items: center; gap: 8px; }
+#hints { display: flex; align-items: center; gap: 6px; }
+#controls #hints button { padding: 6px 10px; white-space: nowrap; }
 #hint-count {
-  margin-right: auto; padding: 4px 8px;
+  margin-right: auto; padding: 4px 6px; white-space: nowrap;
   border-radius: 6px; background: var(--paper);
   font-size: 14px; color: var(--ink-soft);
 }

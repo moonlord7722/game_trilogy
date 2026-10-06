@@ -37,6 +37,17 @@
         <path d="M174 32V27a6 6 0 0 1 12 0v5"/>
       </g>
       </g>
+      <g id="speed-stage">
+        <path class="ink" d="M8 92H352M8 196H352"/>
+        <path class="finish" d="M340 30V92M340 134V196"/>
+        <g id="t-ticks"></g>
+        <g id="t-ref-pre" class="art ref"></g>
+        <g id="t-ghost" class="art guess"></g>
+        <g id="t-ref" class="art ref"></g>
+        <g id="t-guess" class="art guess"></g>
+        <g id="t-ref-tag" class="tag ref"><rect y="97" height="20" rx="5"/><text x="180" y="111" text-anchor="middle"></text></g>
+        <g id="t-guess-tag" class="tag true"><rect y="201" height="20" rx="5"/><text x="180" y="215" text-anchor="middle"></text></g>
+      </g>
       <g id="size-stage">
         <path class="ink" d="M8 200H352"/>
         <g id="s-ref" class="art ref"></g>
@@ -142,6 +153,7 @@
   <script src="data2.js"></script>
   <script src="data3.js"></script>
   <script src="sizes.js"></script>
+  <script src="speeds.js"></script>
   <script src="game.js"></script>
 </body>
 </html>

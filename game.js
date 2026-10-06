@@ -18,6 +18,14 @@
     { id: 'hard', title: 'Сложный', hint: 'Большая разница, строгие очки', min: 3, max: 12, zeroAt: 2, span: 25, showRef: false, need: 80 },
     { id: 'expert', title: 'Эксперт', hint: 'Пары с удивительными предметами', min: 1.2, max: 12, zeroAt: 1.8, span: 25, showRef: false, need: 100, wow: true },
   ];
+  // Режим «Скорость»: min/max — во сколько раз отличаются скорости пары,
+  // span — во сколько раз ползунок уводит скорость нижнего предмета в каждую сторону от скорости верхнего.
+  const SPEED_LEVELS = [
+    { id: 'easy', title: 'Лёгкий', hint: 'Скорость верхнего предмета подсказана', min: 1.2, max: 3, zeroAt: 2.5, span: 6, showRef: true, need: 0 },
+    { id: 'mid', title: 'Средний', hint: 'Без подсказок', min: 1.2, max: 5, zeroAt: 2.2, span: 8, showRef: false, need: 40 },
+    { id: 'hard', title: 'Сложный', hint: 'Большая разница, строгие очки', min: 2, max: 10, zeroAt: 2, span: 16, showRef: false, need: 80 },
+    { id: 'expert', title: 'Эксперт', hint: 'Пары с удивительными предметами', min: 1.2, max: 10, zeroAt: 1.8, span: 16, showRef: false, need: 100, wow: true },
+  ];
   const MODES = {
     weight: {
       title: 'Вес', levels: WEIGHT_LEVELS, go: 'Отпустить весы', hint: 'Вес',
@@ -26,6 +34,10 @@
     size: {
       title: 'Размер', levels: SIZE_LEVELS, go: 'Замерить', hint: 'Размер',
       lead: 'Какого размера одно рядом с другим? Растяни силуэт на глаз и замерь.',
+    },
+    speed: {
+      title: 'Скорость', levels: SPEED_LEVELS, go: 'Дать старт', hint: 'Скорость',
+      lead: 'Кто кого обгонит и насколько? Выставь скорость на глаз и дай старт.',
     },
   };
   // Ответ в «Размере» засчитывается как точный, если промах меньше этой доли.
@@ -77,6 +89,8 @@
     level: $('level'), round: $('round'), total: $('total'), question: $('question'),
     beam: $('beam'), left: $('left-pan'), right: $('right-pan'),
     app: $('app'), modes: $('modes'), lead: $('lead'), modeNames: [...document.querySelectorAll('.mode-name')],
+    tRef: $('t-ref'), tGuess: $('t-guess'), tRefPre: $('t-ref-pre'), tGhost: $('t-ghost'),
+    tRefTag: $('t-ref-tag'), tGuessTag: $('t-guess-tag'), tTicks: $('t-ticks'),
     sRef: $('s-ref'), sGuess: $('s-guess'), sGhost: $('s-ghost'), sRefTag: $('s-ref-tag'), sGuessTag: $('s-guess-tag'),
     ref: $('ref'), pile: $('pile'), lock: $('lock'), refTag: $('ref-tag'), unitTag: $('unit-tag'),
     result: $('result'), verdict: $('verdict'), fact: $('fact'),
@@ -162,16 +176,21 @@
     return '≈ ' + num(Math.round(m * 1000) / 10) + ' см';
   }
 
+  const fmtKmh = (v) => '≈ ' + num(v >= 10 ? Math.round(v) : Math.round(v * 10) / 10) + ' км/ч';
+
   const ALL = OBJECTS.concat(EXTRA);
   EXTRA.forEach((o) => { o.wow = true; });
   // size: by — мера (высота, длина, диаметр), m — метры, ext — протяжённость силуэта по этой мере.
   ALL.forEach((o) => {
     const s = SIZES[o.name];
     if (s) o.size = { by: s[0], m: s[1], ext: s[2] };
+    // speed: v — км/ч, flip — силуэт смотрит влево, hop — бежит вприпрыжку.
+    const v = SPEEDS[o.name];
+    if (v) o.speed = { v: v[0], flip: v[1], hop: v[2] };
   });
   // Величина предмета в текущем режиме; предметы без неё в режиме не участвуют.
-  const val = (o) => (mode === 'size' ? o.size && o.size.m : o.kg);
-  const fmtVal = (o) => (mode === 'size' ? fmtM(o.size.m) : fmtKg(o.kg));
+  const val = (o) => (mode === 'size' ? o.size && o.size.m : mode === 'speed' ? o.speed && o.speed.v : o.kg);
+  const fmtVal = (o) => (mode === 'size' ? fmtM(o.size.m) : mode === 'speed' ? fmtKmh(o.speed.v) : fmtKg(o.kg));
   const usable = (list) => list.filter(val);
   // Ячейка сохранения для партии дня и рекорда: у веса — как было до появления режимов.
   const slot = () => (mode === 'weight' ? level.id : `${mode}-${level.id}`);
@@ -415,9 +434,11 @@
       const h = pool[Math.floor(rng() * pool.length)];
       const u = pool[Math.floor(rng() * pool.length)];
       // В весе ответ — сколько штук, в размере — во сколько раз оранжевый предмет больше синего.
-      const ratio = mode === 'size' ? u.size.m / h.size.m : h.kg / u.kg;
-      const gap = mode === 'size' ? Math.max(ratio, 1 / ratio) : ratio;
-      if (used.has(h) || used.has(u) || gap < level.min || gap > level.max) continue;
+      const ratio = mode === 'weight' ? h.kg / u.kg : val(u) / val(h);
+      const gap = mode === 'weight' ? ratio : Math.max(ratio, 1 / ratio);
+      if (gap < level.min || gap > level.max) continue;
+      // Предмет встречается в партии один раз. Если предметов с нужной величиной мало, он повторяется, но не пара.
+      if (guard < 3500 ? used.has(h) || used.has(u) : out.some((x) => x.h === h && x.u === u)) continue;
       if (mode === 'weight' && heavy(h) !== heavy(u)) continue;
       if (mode === 'weight' && h.kg >= BIG_KG && u.kg < BIG_UNIT_KG) continue;
       // Недавние эталоны пропускаем, пока есть из чего выбирать.
@@ -432,12 +453,13 @@
 
   function dailySeed() {
     const d = new Date();
-    return (d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()) * 10 + LEVELS.indexOf(level) + (mode === 'size' ? 5 : 0);
+    const base = (d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate()) * 10 + LEVELS.indexOf(level);
+    return mode === 'speed' ? base * 31 + 7 : base + (mode === 'size' ? 5 : 0);
   }
 
   function judge(r, guess, i) {
     const f = guess / r.ratio;
-    if (mode === 'size') {
+    if (mode !== 'weight') {
       const off = Math.abs(Math.log(f));
       const score = off < Math.log(SIZE_EXACT) ? 100 : Math.round(100 * Math.max(0, 1 - off / Math.log(level.zeroAt)));
       return { r, guess, f, score, need: r.ratio, hinted: Boolean(hintLog[i]), swapped: i === swapAt };
@@ -572,13 +594,17 @@
     Platform.play(true);
     angle = 0; vel = 0;
     lo = 1; hi = level.slider;
-    if (mode === 'size') { lo = 1 / level.span; hi = level.span; }
+    race = null;
+    if (mode !== 'weight') { lo = 1 / level.span; hi = level.span; }
     el.round.textContent = isTutorial ? '' : `${idx + 1} / ${ROUNDS}`;
     el.total.textContent = total;
-    el.question.innerHTML = mode === 'size'
+    el.question.innerHTML = mode === 'speed'
+      ? `<span class="ref">${cap(r.h.forms[0])}</span> на полном ходу. С какой скоростью мчится <span class="guess">${r.u.forms[0]}</span>?`
+      : mode === 'size'
       ? `<span class="ref">${cap(r.h.forms[0])}</span> в масштабе. Какого размера <span class="guess">${r.u.forms[0]}</span>?`
       : `Сколько <span class="guess">${r.u.forms[2]}</span> уравновесят <span class="ref">${r.h.acc}</span>?`;
     if (mode === 'size') setScene(r);
+    if (mode === 'speed') setTrack(r);
     el.ref.innerHTML = r.h.art;
     if (mode === 'weight') setTag(el.refTag, fmtKg(r.h.kg));
     el.refTag.classList.toggle('off', !level.showRef);
@@ -600,6 +626,9 @@
     refreshHints();
     if (mode === 'size' && !save.sizeTip && !hintLog[idx]) {
       note('Левый предмет в масштабе. Ползунком подгони правый до настоящего размера и замерь.');
+    }
+    if (mode === 'speed' && !save.speedTip && !hintLog[idx]) {
+      note('Бледные тени — прогноз финиша. Выставь скорость нижнего и дай старт.');
     }
     if (isTutorial) {
       coachStep = 1;
@@ -639,6 +668,9 @@
         if (!best || err < best.err) best = { a, b, n, err };
       });
       const as = mode === 'size' ? 'по размеру как' : 'весит как';
+      if (best && mode === 'speed') {
+        return `Зал считает: ${best.a.forms[0]} ≈ в ${best.n} ${plural(best.n, ['раз', 'раза', 'раз'])} быстрее, чем ${best.b.forms[0]}`;
+      }
       if (best) return `Зал считает: ${best.a.forms[0]} ${as} ≈ ${best.n} ${plural(best.n, best.b.forms)}`;
     }
     return '';
@@ -650,14 +682,19 @@
       el.sRefTag.classList.remove('off');
       note(`${cap(r.h.forms[0])} — ${fmtM(r.h.size.m)} ${BY[r.h.size.by]}`);
       show(count);
+    } else if (type === 'weight' && mode === 'speed') {
+      el.tRefTag.classList.remove('off');
+      note(`${cap(r.h.forms[0])} — ${fmtKmh(r.h.speed.v)}`);
+      show(count);
     } else if (type === 'weight') {
       el.refTag.classList.remove('off');
       note(`${cap(r.h.forms[0])} весит ${fmtKg(r.h.kg)}`);
-    } else if (type === 'range' && mode === 'size') {
+    } else if (type === 'range' && mode !== 'weight') {
       const p = mulberry32(Math.round(r.ratio * 1000) + idx)();
       lo = Math.max(1 / level.span, r.ratio / Math.pow(SIZE_RANGE_HINT, p));
       hi = Math.min(level.span, lo * SIZE_RANGE_HINT);
-      note(`Ответ — от ${fmtM(lo * r.u.size.m / r.ratio)} до ${fmtM(hi * r.u.size.m / r.ratio)}`.replace(/≈ /g, ''));
+      const unit = (x) => (mode === 'size' ? fmtM(x * r.u.size.m / r.ratio) : fmtKmh(x * r.h.speed.v));
+      note(`Ответ — от ${unit(lo)} до ${unit(hi)}`.replace(/≈ /g, ''));
       setCount(count);
     } else if (type === 'range') {
       // Положение ответа внутри диапазона зависит только от раунда: перезагрузка его не меняет.
@@ -729,14 +766,14 @@
 
   const sliderToCount = (v) => {
     const c = Math.exp(Math.log(lo) + v / 1000 * Math.log(hi / lo));
-    return mode === 'size' ? c : Math.round(c);
+    return mode !== 'weight' ? c : Math.round(c);
   };
   const countToSlider = (c) => Math.round(Math.log(c / lo) / Math.log(hi / lo) * 1000);
 
   function setCount(c, fromSlider) {
     const prev = count;
     // В размере ответ — дробное отношение, три знака хватает с запасом.
-    count = Math.max(lo, Math.min(hi, mode === 'size' ? Math.round(c * 1000) / 1000 : Math.round(c)));
+    count = Math.max(lo, Math.min(hi, mode !== 'weight' ? Math.round(c * 1000) / 1000 : Math.round(c)));
     if (!fromSlider) el.slider.value = countToSlider(count);
     show(count);
     if (coachStep === 1 && count !== prev) {
@@ -750,6 +787,11 @@
   function show(c) {
     shown = c;
     const r = rounds[idx];
+    if (mode === 'speed') {
+      const open = level.showRef || hintLog[idx] === 'weight' || phase === 'truth' || phase === 'done';
+      el.count.innerHTML = open ? `<b>${fmtKmh(c * r.h.speed.v)}</b>${r.u.forms[0]}` : `<b>?</b>${r.u.forms[0]}`;
+      return drawTrack(c);
+    }
     if (mode === 'size') {
       // Число видно, только когда размер синего предмета известен или раунд раскрыт.
       const open = level.showRef || hintLog[idx] === 'weight' || phase === 'truth' || phase === 'done';
@@ -766,7 +808,7 @@
     const step = () => {
       ticks++;
       const s = ticks < 8 ? 1 : Math.max(1, Math.round(count * 0.06));
-      if (mode === 'size') setCount(count * Math.pow(ticks < 8 ? 1.02 : 1.05, dir));
+      if (mode !== 'weight') setCount(count * Math.pow(ticks < 8 ? 1.02 : 1.05, dir));
       else setCount(count + dir * s);
       timer = setTimeout(step, ticks < 8 ? 140 : 70);
     };
@@ -905,9 +947,20 @@
     farOver: ['Куда такой?!'],
   };
 
+  // В «Скорости» — про езду и бег; совсем дикий ответ получает свою фразу.
+  const SPEED_PHRASES = {
+    ...PHRASES,
+    over: ['Перебор!', 'Полегче!', 'Притормози!', 'Куда так гнать?', 'Слишком резво!'],
+    under: ['Маловато!', 'Плетётся!', 'Поддай газу!', 'Слишком вяло!'],
+    far: ['Ого! Мимо!', 'Пальцем в небо!', 'Спидометр в шоке!', 'Мимо кассы!', 'Глаз замылился!'],
+    farOver: ['Быстрее пули!'],
+    farUnder: ['Медленнее черепахи!'],
+  };
+
   function sizeVerdict({ f, score }) {
-    const over = f > 1, P = SIZE_PHRASES;
+    const over = f > 1, P = mode === 'speed' ? SPEED_PHRASES : SIZE_PHRASES;
     if (score === 100) return pick(P.exact);
+    if (mode === 'speed' && score === 0) return pick(over ? P.farOver : P.farUnder);
     if (score >= 90) return pick(P.near);
     if (score >= 70) return pick(P.close);
     if (score >= 30) return pick(over ? P.over : P.under);
@@ -918,13 +971,14 @@
   function sizeMiss({ f, score }) {
     if (score === 100) return '';
     const over = f > 1, x = over ? f : 1 / f;
-    if (x < 1.5) return `${over ? 'Больше' : 'Меньше'} на ${Math.max(1, Math.round((over ? f - 1 : 1 - f) * 100))} %`;
-    return `${over ? 'Больше' : 'Меньше'} в ${fmtTimes(x)}`;
+    const word = mode === 'speed' ? (over ? 'Быстрее' : 'Медленнее') : over ? 'Больше' : 'Меньше';
+    if (x < 1.5) return `${word} на ${Math.max(1, Math.round((over ? f - 1 : 1 - f) * 100))} %`;
+    return `${word} в ${fmtTimes(x)}`;
   }
 
   // Броская фраза о том, насколько близок ответ; цифры промаха идут отдельно, в missText.
   function verdictText({ f, score, need }, count, unit) {
-    if (mode === 'size') return sizeVerdict({ f, score });
+    if (mode !== 'weight') return sizeVerdict({ f, score });
     if (count === need) return pick(PHRASES.exact);
     const over = f > 1, d = Math.abs(count - need);
     if (score >= 90) {
@@ -939,7 +993,7 @@
 
   // Промах цифрой: вблизи ответа — в предметах, вдали или с длинным названием — в разах.
   function missText({ f, score, need }, count, unit) {
-    if (mode === 'size') return sizeMiss({ f, score });
+    if (mode !== 'weight') return sizeMiss({ f, score });
     if (count === need) return '';
     const over = f > 1, d = Math.abs(count - need), word = over ? 'Перебор' : 'Недобор';
     const items = `${word} на ${d === 1 ? `1 ${unit.acc}` : `${num(d)} ${plural(d, unit.forms)}`}`;
@@ -970,10 +1024,15 @@
       save.sizeTip = true;
       storeSave();
     }
+    if (mode === 'speed' && !save.speedTip) {
+      save.speedTip = true;
+      storeSave();
+    }
     // В «Размере» качаться нечему, поэтому раскрытие идёт быстрее.
     const [tVerdict, tTruth] = mode === 'size' ? [400, 1500] : [1500, 2700];
     // Пока последний раунд можно переиграть, итог партии записывается при выходе из раунда.
     if (results.length === ROUNDS && !canSwap()) finishGame();
+    if (mode === 'speed') return revealSpeed(res, miss, my);
 
     setTimeout(() => {
       if (my !== run) return;
@@ -1021,6 +1080,51 @@
     }, tTruth);
   }
 
+  // Раскрытие в «Скорости»: сначала забег со скоростью игрока, потом — как на самом деле:
+  // зелёный силуэт бежит с настоящей скоростью, ответ игрока — бледной тенью рядом.
+  // Совсем дикий ответ (0 очков) не разыгрывается: сразу вердикт и настоящий забег.
+  function revealSpeed(res, miss, my) {
+    const r = rounds[idx], { score, need } = res, wild = score === 0;
+    const top = { g: el.tRef, o: r.h, lane: 0, v: 1 };
+    el.tRefPre.style.display = el.tGhost.style.display = 'none';
+    const verdict = () => {
+      el.verdict.textContent = `${verdictText(res, count, r.u)} · +${score}`;
+      el.fact.innerHTML = miss && `${miss}<br>&nbsp;`;
+      el.result.classList.remove('empty');
+      el.total.textContent = total;
+    };
+    const real = () => {
+      phase = 'truth';
+      el.tGuess.setAttribute('class', 'art true');
+      el.count.classList.add('true');
+      el.tRefTag.classList.remove('off');
+      el.tGuessTag.classList.remove('off');
+      show(need);
+      const list = [top, { g: el.tGuess, o: r.u, lane: 1, v: need }];
+      if (!wild) {
+        el.tGhost.style.display = '';
+        list.push({ g: el.tGhost, o: r.u, lane: 1, v: count });
+      }
+      startRace(list, () => {
+        if (my !== run) return;
+        el.fact.innerHTML = `${miss ? miss + '<br>' : ''}${cap(r.u.forms[0])} — <b>${fmtKmh(r.u.speed.v)}</b>`;
+        el.main.textContent = idx + 1 < ROUNDS ? 'Дальше' : 'Итоги';
+        el.main.disabled = false;
+        el.swap.hidden = !canSwap();
+        phase = 'done';
+      });
+    };
+    if (wild) {
+      verdict();
+      return real();
+    }
+    startRace([top, { g: el.tGuess, o: r.u, lane: 1, v: count }], () => {
+      if (my !== run) return;
+      verdict();
+      real();
+    });
+  }
+
   function next() {
     if (isTutorial) return finishTutorial();
     idx++;
@@ -1042,7 +1146,7 @@
     el.sumSquares.innerHTML = results
       .map((x) => `<i class="${x.score >= GOOD ? 's-good' : x.score >= OK ? 's-mid' : 's-bad'}${x.hinted || x.swapped ? ' hinted' : ''}"></i>`).join('');
     el.sumList.innerHTML = results
-      .map((x) => `<li><span>${mode === 'size' ? `${cap(x.r.u.forms[0])} ${fmtM(x.r.u.size.m)}`
+      .map((x) => `<li><span>${mode !== 'weight' ? `${cap(x.r.u.forms[0])} ${fmtVal(x.r.u)}`
         : `${cap(x.r.h.forms[0])} ≈ ${num(x.need)} ${plural(x.need, x.r.u.forms)}`}</span><span>+${x.score}</span></li>`)
       .join('');
     const notes = [
@@ -1127,6 +1231,65 @@
     if (ghost) stand(el.sGhost, ub, ku(ghost) * p, mid - ub.width * ku(ghost) * p / 2);
   }
 
+  // ---------- дорожки «Скорости» ----------
+
+  // Дорожка идёт от TRACK_X0 до TRACK_X1, силуэт на ней размером RUNNER. Лидер забега проходит её за T_RUN секунд,
+  // после его финиша картинка замирает на T_HOLD.
+  const TRACK_X0 = 16, TRACK_X1 = 340, RUNNER = 60, LANE_Y = [92, 196], T_RUN = 2, T_HOLD = 0.9;
+  const TRACK = TRACK_X1 - TRACK_X0 - RUNNER;
+  // race — идущий забег: list — бегуны { g, o, lane, v }, then — что сделать после него.
+  let race = null;
+
+  el.tTicks.innerHTML = LANE_Y.map((y) => Array.from({ length: 11 },
+    (_, i) => `<path class="tick" d="M${TRACK_X0 + i * (TRACK_X1 - TRACK_X0) / 10} ${y}v5"/>`).join('')).join('');
+
+  // at — пройденная доля дорожки. Силуэт, который смотрит влево, разворачивается по ходу.
+  function placeRunner(g, o, lane, at) {
+    const x = TRACK_X0 + at * TRACK, k = RUNNER / 100;
+    const hop = o.speed.hop && at > 0 && at < 1 ? -Math.abs(Math.sin(at * TRACK / 9)) * 3 : 0;
+    const y = LANE_Y[lane] - RUNNER + hop;
+    g.setAttribute('transform', o.speed.flip ? `translate(${x + RUNNER} ${y}) scale(${-k} ${k})` : `translate(${x} ${y}) scale(${k})`);
+  }
+
+  function setTrack(r) {
+    el.tRef.innerHTML = el.tRefPre.innerHTML = r.h.art;
+    el.tGuess.innerHTML = el.tGhost.innerHTML = r.u.art;
+    el.tGuess.setAttribute('class', 'art guess');
+    el.tRefPre.style.display = el.tGhost.style.display = '';
+    setTag(el.tRefTag, fmtKmh(r.h.speed.v), 180);
+    setTag(el.tGuessTag, fmtKmh(r.u.speed.v), 180);
+    el.tRefTag.classList.toggle('off', !level.showRef);
+    el.tGuessTag.classList.add('off');
+  }
+
+  // До старта оба стоят на линии, а бледные тени показывают прогноз: где каждый будет, когда первый финиширует.
+  // q — во сколько раз нижний быстрее верхнего.
+  function drawTrack(q) {
+    if (phase !== 'guess') return;
+    const { h, u } = rounds[idx];
+    placeRunner(el.tRef, h, 0, 0);
+    placeRunner(el.tGuess, u, 1, 0);
+    placeRunner(el.tRefPre, h, 0, Math.min(1, 1 / q));
+    placeRunner(el.tGhost, u, 1, Math.min(1, q));
+  }
+
+  function startRace(list, then) {
+    race = { list, then, clock: 0 };
+  }
+
+  function stepRace(dt) {
+    const top = Math.max(...race.list.map((x) => x.v));
+    race.clock += dt;
+    // Когда лидер финишировал, остальные замирают там, где их застал финиш.
+    if (race.clock <= T_RUN + dt) {
+      race.list.forEach((x) => placeRunner(x.g, x.o, x.lane, Math.min(1, x.v / top * race.clock / T_RUN)));
+    } else if (race.clock > T_RUN + T_HOLD) {
+      const { then } = race;
+      race = null;
+      then();
+    }
+  }
+
   function setMode(m) {
     mode = m;
     LEVELS = MODES[m].levels;
@@ -1139,6 +1302,7 @@
     // Пока площадка держит игру на паузе (реклама, свёрнутая вкладка), весы стоят.
     const dt = Platform.paused ? 0 : Math.min(0.033, (t - lastT) / 1000 || 0);
     lastT = t;
+    if (race) stepRace(dt);
     let target = 0;
     // После раскрытия весы стоят ровно: остаток от округления до целых штук не показываем.
     if (phase === 'swing' || phase === 'truth') {

@@ -4,7 +4,7 @@ import os
 import zipfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-FILES = ['index.html', 'style.css', 'platform.js', 'data.js', 'data2.js', 'data3.js', 'sizes.js', 'game.js']
+FILES = ['index.html', 'style.css', 'platform.js', 'data.js', 'data2.js', 'data3.js', 'sizes.js', 'speeds.js', 'game.js']
 OUT = os.path.join(ROOT, 'dist', 'glazomer.zip')
 
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
