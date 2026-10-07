@@ -140,6 +140,58 @@ class GameTest {
     }
 
     @Test
+    fun holdingPlusKeepsAdding() {
+        skipTutorial()
+        tap("play-daily")
+        awaitGuess("Отпустить весы")
+        val before = count()
+        val (x, y) = locate("plus")
+        val down = SystemClock.uptimeMillis()
+        touch(MotionEvent.ACTION_DOWN, down, down, x, y)
+        Thread.sleep(1500)
+        touch(MotionEvent.ACTION_UP, down, SystemClock.uptimeMillis(), x, y)
+        val after = count()
+        assertTrue("за полторы секунды удержания: $before → $after", after >= before + 5)
+        Thread.sleep(500)
+        assertEquals("после отпускания счёт продолжает расти", after, count())
+    }
+
+    @Test
+    fun draggingTheSliderChangesTheAnswer() {
+        skipTutorial()
+        tap("play-daily")
+        awaitGuess("Отпустить весы")
+        val before = count()
+        val (fromX, y) = locate("slider", shift = -0.45)
+        val (toX, _) = locate("slider", shift = 0.3)
+        val down = SystemClock.uptimeMillis()
+        touch(MotionEvent.ACTION_DOWN, down, down, fromX, y)
+        for (step in 1..10) {
+            touch(MotionEvent.ACTION_MOVE, down, down + step * 20, fromX + (toX - fromX) * step / 10, y)
+            Thread.sleep(20)
+        }
+        touch(MotionEvent.ACTION_UP, down, down + 240, toX, y)
+        until("ответ после движения ползунка") { count() > before }
+        assertEquals("страница уехала вслед за пальцем", 0, (js("return scrollX + scrollY") as Number).toInt())
+    }
+
+    @Test
+    fun roundSurvivesLeavingAndReturningToTheApp() {
+        skipTutorial()
+        tap("play-daily")
+        awaitGuess("Отпустить весы")
+        tap("plus")
+        val question = text("question")
+        val answer = count()
+        scenario.moveToState(Lifecycle.State.CREATED)
+        Thread.sleep(1500)
+        scenario.moveToState(Lifecycle.State.RESUMED)
+        assertEquals(question, text("question"))
+        assertEquals(answer, count())
+        assertEquals("Дальше", playRound("Отпустить весы"))
+    }
+
+    @Test
     fun hintIsSpentOncePerRound() {
         skipTutorial()
         tap("play-daily")
@@ -325,26 +377,36 @@ class GameTest {
      * сделанная без жеста игрока, не считается шагом для системной кнопки «назад».
      */
     private fun tap(target: String) {
+        val (x, y) = locate(target, "window.tapped = false; b.addEventListener('click', () => { window.tapped = true; }, { once: true });")
+        val down = SystemClock.uptimeMillis()
+        touch(MotionEvent.ACTION_DOWN, down, down, x, y)
+        touch(MotionEvent.ACTION_UP, down, down + 40, x, y)
+        until("нажатие на ${selector(target)}") { js("return window.tapped") == true }
+    }
+
+    /** Точка экрана: середина кнопки, сдвинутая на долю её ширины. Перед ответом на странице выполняется [prepare]. */
+    private fun locate(target: String, prepare: String = "", shift: Double = 0.0): Pair<Float, Float> {
         val at = js(
             "const b = document.querySelector('${selector(target)}');" +
                 "if (!b || b.disabled || !b.getClientRects().length) return null;" +
-                "b.scrollIntoView({ block: 'nearest' });" +
-                "window.tapped = false; b.addEventListener('click', () => { window.tapped = true; }, { once: true });" +
-                "const r = b.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2, devicePixelRatio]"
+                "b.scrollIntoView({ block: 'nearest' });" + prepare +
+                "const r = b.getBoundingClientRect(); return [r.left + r.width * (0.5 + $shift), r.top + r.height / 2, devicePixelRatio]"
         ) as JSONArray? ?: throw AssertionError("нет кнопки ${selector(target)} или она выключена")
         val corner = IntArray(2)
         scenario.onActivity { it.webView.getLocationOnScreen(corner) }
-        val x = corner[0] + (at.getDouble(0) * at.getDouble(2)).toFloat()
-        val y = corner[1] + (at.getDouble(1) * at.getDouble(2)).toFloat()
-        val instrumentation = InstrumentationRegistry.getInstrumentation()
-        val down = SystemClock.uptimeMillis()
-        listOf(MotionEvent.ACTION_DOWN to down, MotionEvent.ACTION_UP to down + 40).forEach { (action, time) ->
-            val event = MotionEvent.obtain(down, time, action, x, y, 0)
-            instrumentation.sendPointerSync(event)
-            event.recycle()
-        }
-        until("нажатие на ${selector(target)}") { js("return window.tapped") == true }
+        return Pair(
+            corner[0] + (at.getDouble(0) * at.getDouble(2)).toFloat(),
+            corner[1] + (at.getDouble(1) * at.getDouble(2)).toFloat(),
+        )
     }
+
+    private fun touch(action: Int, down: Long, time: Long, x: Float, y: Float) {
+        val event = MotionEvent.obtain(down, time, action, x, y, 0)
+        InstrumentationRegistry.getInstrumentation().sendPointerSync(event)
+        event.recycle()
+    }
+
+    private fun count() = (js("return document.querySelector('#count b').textContent") as String).filter { it.isDigit() }.toInt()
 
     private fun text(id: String) = js("return document.getElementById('$id').textContent") as String
 
