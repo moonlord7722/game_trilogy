@@ -900,6 +900,8 @@
       return (r.hinted || r.swapped ? ['🟢', '🟡', '🔴'] : ['🟩', '🟨', '🟥'])[i];
     }).join('');
     const text = `Глазомер · ${MODES[mode].title.toLowerCase()} · ${level.title.toLowerCase()} — ${total} из ${ROUNDS * 100}\n${squares}`;
+    // В приложении результат уходит в системное окно «Поделиться».
+    if (Platform.share) return Platform.share(text);
     try {
       await navigator.clipboard.writeText(text);
       el.share.textContent = 'Скопировано';
@@ -1248,7 +1250,7 @@
     ].filter(Boolean);
     el.sumNew.innerHTML = notes.map((t) => `<p>${t}</p>`).join('')
       + (items.length ? `<div class="shelf">${items.map(figure).join('')}</div>` : '');
-    el.share.textContent = 'Скопировать результат';
+    el.share.textContent = Platform.share ? 'Поделиться результатом' : 'Скопировать результат';
     el.summary.hidden = false;
   }
 

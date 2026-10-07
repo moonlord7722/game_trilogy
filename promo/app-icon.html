@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Глазомер — значок приложения</title>
+  <link rel="stylesheet" href="../style.css">
+  <style>
+    /* Слои адаптивного значка Android, 432×432: ?bg — бумага, без параметра — весы в безопасной зоне. */
+    html, body { width: 432px; height: 432px; overflow: hidden; }
+    body { background-size: 54px 54px, 54px 54px, 13.5px 13.5px, 13.5px 13.5px; }
+    body.fg { background: none; }
+    svg { display: block; }
+  </style>
+</head>
+<body>
+  <svg id="pic" width="432" height="432" viewBox="0 0 432 432"></svg>
+  <script src="../data.js"></script>
+  <script src="../data2.js"></script>
+  <script src="art.js"></script>
+  <script>
+    if (location.search !== '?bg') {
+      document.body.className = 'fg';
+      document.getElementById('pic').innerHTML = scaleArt(216, 142, 0.47);
+    }
+  </script>
+</body>
+</html>
