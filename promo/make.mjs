@@ -1,5 +1,5 @@
 // Собирает материалы для карточки игры в promo/out: иконку, обложку и скриншоты.
-// Запуск: node promo/make.mjs  (нужен установленный Microsoft Edge).
+// Запуск: node promo/make.mjs [rustore]  (нужен установленный Microsoft Edge).
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
@@ -101,7 +101,9 @@ await p.shot('cover-800x470');
 await p.close();
 
 // Телефон 9:16 и компьютер 16:9: меню, все раунды партии дня, итоги, коллекция, потом партии «Размера» и «Скорости».
-for (const [tag, w, h, dpr] of [['mobile', 405, 720, 2], ['desktop', 1280, 720, 1.5]]) {
+// «node promo/make.mjs rustore» — только телефонные кадры 1080×1920 для карточки в RuStore.
+const SHOTS = process.argv[2] === 'rustore' ? [['rustore', 405, 720, 8 / 3]] : [['mobile', 405, 720, 2], ['desktop', 1280, 720, 1.5]];
+for (const [tag, w, h, dpr] of SHOTS) {
   p = await page(`${base}/`, w, h, dpr, SEED);
   await p.shot(`${tag}-menu`);
   await p.run(`${GAME} $('play-daily').click(); await wait(600);`);
